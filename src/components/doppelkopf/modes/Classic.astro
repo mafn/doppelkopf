@@ -1,0 +1,2364 @@
+---
+import SiteLinks from "../../SiteLinks.astro";
+
+interface Props {
+  rulesetKind?: "standard" | "oblivious";
+  title?: string;
+  showLinks?: boolean;
+}
+
+const {
+  title = "Doppelkopf",
+  showLinks = true,
+  rulesetKind = "standard",
+} = Astro.props;
+---
+
+<section
+  class="classic-mode"
+  aria-labelledby="classic-title"
+  data-ruleset={rulesetKind}
+  data-dkhub-mode="classic"
+>
+  <h1 id="classic-title" class="sr-only">{title}</h1>
+
+  <p class="classic-status js-status" aria-live="polite">Loading...</p>
+  <p class="js-sr-action sr-only" aria-live="polite"></p>
+  <p class="js-sr-trick sr-only" aria-live="polite"></p>
+
+  <div class="classic-shell" role="region" aria-label="Game table">
+    <header class="classic-top">
+      <div class="classic-top__left">
+        <span class="classic-tag">Hand</span>
+        <span class="classic-mono js-match-line">----</span>
+      </div>
+      <div class="classic-top__mid" aria-label="Lead hint">
+        <p class="classic-hint js-lead-line">LEAD: --</p>
+        <p class="classic-hint classic-hint--sub js-follow-line">FOLLOW: --</p>
+        <p class="classic-hint classic-hint--sub js-mode-line">MODE: --</p>
+      </div>
+      <div class="js-announce-bar classic-announce-bar"></div>
+      <div class="classic-top__right">
+        {
+          import.meta.env.DEV && (
+            <button
+              type="button"
+              class="classic-btn classic-btn--alt js-toggle-curriculum"
+              style="margin-right: 0.5rem"
+            >
+              DEV: CURRICULUM OFF
+            </button>
+          )
+        }
+        <button type="button" class="classic-btn js-return-hub">Hub</button>
+        <button type="button" class="classic-btn js-new-hand">New Hand</button>
+      </div>
+    </header>
+
+    <section class="classic-table js-table" aria-label="Current trick">
+      <div class="classic-seat classic-seat--n js-seat-n">SEAT 03</div>
+      <div class="classic-seat classic-seat--w js-seat-w">SEAT 02</div>
+      <div class="classic-seat classic-seat--e js-seat-e">SEAT 04</div>
+      <div class="classic-seat classic-seat--s js-seat-s">YOU</div>
+
+      <div class="classic-trick js-table-trick">
+        <div class="classic-pile classic-pile--n js-trick-2"></div>
+        <div class="classic-pile classic-pile--w js-trick-1"></div>
+        <div class="classic-pile classic-pile--e js-trick-3"></div>
+        <div class="classic-pile classic-pile--s js-trick-0"></div>
+      </div>
+    </section>
+
+    <section class="classic-score-area" aria-label="Score">
+      <div class="classic-panel">
+        <h2 class="classic-panel__h">Score</h2>
+        <div class="classic-score-grid">
+          <div class="classic-score-row">
+            <span>YOU</span><span class="js-score-0">0</span>
+          </div>
+          <div class="classic-score-row">
+            <span>S2</span><span class="js-score-1">0</span>
+          </div>
+          <div class="classic-score-row">
+            <span>S3</span><span class="js-score-2">0</span>
+          </div>
+          <div class="classic-score-row">
+            <span>S4</span><span class="js-score-3">0</span>
+          </div>
+        </div>
+        <p class="classic-mono js-turn-line mt-4">--</p>
+      </div>
+    </section>
+
+    <section class="classic-hand-area" aria-label="Your hand">
+      <div class="classic-handwrap">
+        <h2 class="classic-panel__h">Hand</h2>
+        <ul class="classic-hand js-hand-list" aria-label="Your cards"></ul>
+      </div>
+    </section>
+
+    <section class="classic-log-area" aria-label="Events">
+      <div class="classic-panel">
+        <h2 class="classic-panel__h">Events</h2>
+        <ul class="classic-log js-event-log" aria-live="polite"></ul>
+      </div>
+    </section>
+
+    <div class="classic-fx-badge js-fx-badge" aria-hidden="true"></div>
+
+    <div
+      class="classic-finish classic-finish--hidden js-finish"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="classic-finish-title"
+      aria-hidden="true"
+    >
+      <div class="classic-finish__card">
+        <p class="classic-finish__kicker js-finish-kicker">Hand Over</p>
+        <h2
+          id="classic-finish-title"
+          class="classic-finish__title js-finish-title"
+        >
+          --
+        </h2>
+        <p class="classic-finish__detail js-finish-detail">--</p>
+        <div class="classic-finish__actions">
+          <button type="button" class="classic-btn js-finish-new"
+            >New game</button
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {
+    showLinks && (
+      <nav class="classic-links" aria-label="Site">
+        <SiteLinks linkClass="classic-link" separatorClass="classic-sep" />
+      </nav>
+    )
+  }
+</section>
+
+<script>
+  import { cardLabel, cardPoints } from "../../../lib/doppelkopf/deck";
+  import {
+    pickBotCardByTypeAsync,
+    pickBotSoloByTypeAsync,
+    getBotType,
+    type BotType,
+  } from "../../../lib/doppelkopf/bot";
+  import { pickBotCard as heuristicPick } from "../../../lib/doppelkopf/bots/heuristic-v1";
+  import {
+    createEngine,
+    legalAnnouncements,
+    legalMoves,
+    reduce,
+  } from "../../../lib/doppelkopf/engine";
+  import { computeHardTeamEvidence } from "../../../lib/doppelkopf/team-evidence";
+  import {
+    getTrumpSuit,
+    isTrump,
+    trumpPower,
+  } from "../../../lib/doppelkopf/rules";
+  import {
+    rulesetStandard,
+    rulesetObliviousDay,
+  } from "../../../lib/doppelkopf/ruleset";
+  import type {
+    AnnouncementDeclaration,
+    BotView,
+    Card,
+    EngineEvent,
+    EngineStep,
+    GameAction,
+    Seat,
+    SoloType,
+    Team,
+    TrickPlay,
+  } from "../../../lib/doppelkopf/types";
+
+  function init() {
+    const roots = document.querySelectorAll(".classic-mode");
+    roots.forEach((root) => {
+      if ((root as any)._js_initialized) return;
+      (root as any)._js_initialized = true;
+
+      const getEl = <T extends HTMLElement>(sel: string): T => {
+        const el = root.querySelector(sel);
+        if (!el) throw new Error(`Missing element ${sel}`);
+        return el as T;
+      };
+
+      const statusLine = getEl<HTMLParagraphElement>(".js-status");
+      const srActionLine = getEl<HTMLParagraphElement>(".js-sr-action");
+      const srTrickLine = getEl<HTMLParagraphElement>(".js-sr-trick");
+      const matchLine = getEl<HTMLSpanElement>(".js-match-line");
+      const newHandBtn = getEl<HTMLButtonElement>(".js-new-hand");
+      const leadLine = getEl<HTMLParagraphElement>(".js-lead-line");
+      const followLine = getEl<HTMLParagraphElement>(".js-follow-line");
+      const modeLine = getEl<HTMLParagraphElement>(".js-mode-line");
+      const turnLine = getEl<HTMLParagraphElement>(".js-turn-line");
+      const eventLog = getEl<HTMLUListElement>(".js-event-log");
+      const fxBadge = getEl<HTMLDivElement>(".js-fx-badge");
+      const finishOverlay = getEl<HTMLDivElement>(".js-finish");
+      const finishKicker = getEl<HTMLParagraphElement>(".js-finish-kicker");
+      const finishTitle = getEl<HTMLHeadingElement>(".js-finish-title");
+      const finishDetail = getEl<HTMLParagraphElement>(".js-finish-detail");
+      const finishNewBtn = getEl<HTMLButtonElement>(".js-finish-new");
+      const handList = getEl<HTMLUListElement>(".js-hand-list");
+      const seatN = getEl<HTMLDivElement>(".js-seat-n");
+      const seatW = getEl<HTMLDivElement>(".js-seat-w");
+      const seatE = getEl<HTMLDivElement>(".js-seat-e");
+      const seatS = getEl<HTMLDivElement>(".js-seat-s");
+      const trickCard0 = getEl<HTMLDivElement>(".js-trick-0");
+      const trickCard1 = getEl<HTMLDivElement>(".js-trick-1");
+      const trickCard2 = getEl<HTMLDivElement>(".js-trick-2");
+      const trickCard3 = getEl<HTMLDivElement>(".js-trick-3");
+      const scoreEls = [
+        getEl(".js-score-0"),
+        getEl(".js-score-1"),
+        getEl(".js-score-2"),
+        getEl(".js-score-3"),
+      ];
+
+      const SEAT_LABEL: Record<Seat, string> = {
+        0: "You",
+        1: "Seat 02",
+        2: "Seat 03",
+        3: "Seat 04",
+      };
+
+      function teamLabel(team: Team): string {
+        return team === "kontra" ? "CONTRA" : "RE";
+      }
+
+      function soloTypeLabel(type: SoloType): string {
+        if (type === "queen_jack") return "Queens + Jacks";
+        if (type === "queen") return "Queens";
+        if (type === "jack") return "Jacks";
+        if (type === "fleischlos") return "No Trumps";
+        if (type === "clubs") return "Clubs";
+        if (type === "spades") return "Spades";
+        if (type === "hearts") return "Hearts";
+        if (type === "diamonds") return "Diamonds";
+        if (type === "marriage") return "Marriage";
+        if (type === "poverty") return "Poverty";
+        return type;
+      }
+
+      function localizeDokoText(text: string): string {
+        return text
+          .replaceAll("SCHWEINE", "PIGLETS")
+          .replaceAll("Schweine", "Piglets")
+          .replaceAll("Fuchs gefangen", "Fox caught")
+          .replaceAll("Fuchs", "Fox")
+          .replaceAll("Karlchen!", "Last Jack!")
+          .replaceAll("Renonce", "Renege")
+          .replaceAll("Fleischlos", "No Trumps");
+      }
+
+      function modeStatusLabel(): string {
+        if (game.state.phase === "solo_selection") {
+          const highest = game.state.soloSelection.highestSolo;
+          if (!highest) return "SOLO QUERY";
+          return `SOLO QUERY | BID: ${soloTypeLabel(highest.soloType).toUpperCase()} (${SEAT_LABEL[highest.seat].toUpperCase()})`;
+        }
+        const mode = game.state.gameMode;
+        if (mode.kind === "normal") return "NORMAL";
+        if (mode.kind === "solo") {
+          return `SOLO: ${soloTypeLabel(mode.soloType).toUpperCase()}`;
+        }
+        if (mode.kind === "poverty") {
+          if (game.state.phase === "poverty_acceptance")
+            return "POVERTY: ACCEPTANCE";
+          if (game.state.phase === "poverty_exchange")
+            return "POVERTY: EXCHANGE";
+          return mode.acceptedBySeat === null ? "POVERTY: PENDING" : "POVERTY";
+        }
+        if (mode.partnerSeat !== null) {
+          return `MARRIAGE: PARTNER ${SEAT_LABEL[mode.partnerSeat].toUpperCase()}`;
+        }
+        if (mode.forced) return "MARRIAGE: FORCED (1V3)";
+        return "MARRIAGE: PARTNER SEARCH";
+      }
+
+      function nextSeat(seat: number): Seat {
+        return ((seat + 1) % 4) as Seat;
+      }
+
+      const isOblivious = root.getAttribute("data-ruleset") === "oblivious";
+      const RULESET = isOblivious ? rulesetObliviousDay() : rulesetStandard();
+
+      function applyHubSettings() {
+        const raw = localStorage.getItem("dkhub_prefs");
+        const prefs = raw
+          ? (() => {
+              try {
+                return JSON.parse(raw);
+              } catch (e) {
+                return null;
+              }
+            })()
+          : null;
+
+        if (prefs && typeof prefs === "object") {
+          if (prefs.dulleRule) RULESET.dulleBeatsDulle = prefs.dulleRule;
+        }
+
+        if (isOblivious) return;
+
+        const schweineRaw = prefs?.schweineRule;
+        const schweineRule =
+          schweineRaw === "everywhere" ||
+          schweineRaw === "no_solo" ||
+          schweineRaw === "off"
+            ? schweineRaw
+            : schweineRaw === "announce_while_playing"
+              ? "no_solo"
+              : schweineRaw === "disabled"
+                ? "off"
+                : "off";
+
+        if (schweineRule === "off") {
+          RULESET.schweine = { mode: "disabled" };
+          RULESET.schweineInSolo = false;
+          return;
+        }
+
+        RULESET.schweine = { mode: "announce_while_playing", announce: "auto" };
+        RULESET.schweineInSolo = schweineRule === "everywhere";
+      }
+
+      function cleanupGlobalUI(): void {
+        document.querySelector(".classic-solo-query")?.remove();
+        document.querySelector(".classic-poverty-query")?.remove();
+        document.querySelector(".classic-exchange-query")?.remove();
+      }
+
+      window.addEventListener("dkhub-settings-changed", applyHubSettings);
+      applyHubSettings();
+
+      let game: EngineStep = createEngine(undefined, RULESET);
+      let gameHistory: GameAction[] = [];
+      let isCurriculumMode = false;
+      let seatOpponents: BotType[] = [
+        "heuristic-v1",
+        "heuristic-v1",
+        "heuristic-v1",
+        "heuristic-v1",
+      ];
+
+      const curriculumBtn = root.querySelector(
+        ".js-toggle-curriculum",
+      ) as HTMLButtonElement | null;
+      if (curriculumBtn) {
+        curriculumBtn.addEventListener("click", () => {
+          isCurriculumMode = !isCurriculumMode;
+          curriculumBtn.textContent = `DEV: CURRICULUM ${isCurriculumMode ? "ON" : "OFF"}`;
+          curriculumBtn.classList.toggle(
+            "classic-btn--announce",
+            isCurriculumMode,
+          );
+          addLog(`Curriculum Mode: ${isCurriculumMode ? "ON" : "OFF"}`);
+          if (isCurriculumMode) {
+            showFx("CURRICULUM ON");
+          }
+        });
+      }
+
+      const handTag = getEl<HTMLSpanElement>(".classic-tag");
+      handTag.addEventListener("dblclick", () => {
+        // Keep secret toggle as fallback
+        if (!curriculumBtn) {
+          isCurriculumMode = !isCurriculumMode;
+          addLog(`Curriculum Mode: ${isCurriculumMode ? "ON" : "OFF"}`);
+          if (isCurriculumMode) showFx("CURRICULUM ON");
+        }
+      });
+
+      let botTimer: number | null = null;
+      let fxTimer: number | null = null;
+      let dealTimer: number | null = null;
+      let captureTimers: number[] = [];
+      let rovingIndex = 0;
+      let lastFocusedCardId: string | null = null;
+      let isActionLocked = false;
+      let isTrickPaused = false;
+      let currentDealer: Seat = 3;
+      let isDealing = false;
+      let hubWrapper: Element | null = null;
+      let inHub = false;
+      let isActive = true;
+
+      hubWrapper = root.closest(".game-mode-wrapper");
+      inHub = !!hubWrapper && !!document.getElementById("game-container");
+      isActive =
+        !inHub || !hubWrapper?.classList.contains("dkhub__mode--hidden");
+
+      function seedLabel(seed: number): string {
+        return `#${(seed >>> 0).toString(36).toUpperCase().padStart(7, "0")}`;
+      }
+      const SUIT_SYMBOL: Record<Card["suit"], string> = {
+        clubs: "♣",
+        spades: "♠",
+        hearts: "♥",
+        diamonds: "♦",
+      };
+      function shortSuit(suit: Card["suit"]): string {
+        return SUIT_SYMBOL[suit] || "?";
+      }
+      function cardFace(card: Card): string {
+        return `${card.rank}${shortSuit(card.suit)}`;
+      }
+
+      function addLog(text: string): void {
+        const li = document.createElement("li");
+        li.textContent = text;
+        eventLog.append(li);
+        const lines = Array.from(eventLog.querySelectorAll("li"));
+        while (lines.length > 15) lines.shift()?.remove();
+        eventLog.scrollTop = eventLog.scrollHeight;
+      }
+
+      function showFx(text: string): void {
+        fxBadge.textContent = text;
+        fxBadge.classList.add("classic-fx-badge--on");
+        if (fxTimer) window.clearTimeout(fxTimer);
+        const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? 800
+          : 2000;
+        fxTimer = window.setTimeout(() => {
+          fxBadge.classList.remove("classic-fx-badge--on");
+        }, ms);
+      }
+
+      function hideFinish(): void {
+        finishOverlay.classList.add("classic-finish--hidden");
+        finishOverlay.setAttribute("aria-hidden", "true");
+      }
+
+      function showFinish(
+        event: Extract<EngineEvent, { type: "HandFinished" }>,
+      ): void {
+        const myTeam = game.state.teamBySeat[0];
+        const didWin = myTeam === event.winningTeam;
+
+        finishKicker.textContent = didWin ? "You won" : "You lost";
+
+        const teammates = ([1, 2, 3] as Seat[]).filter(
+          (s) => game.state.teamBySeat[s] === myTeam,
+        );
+
+        finishTitle.textContent = teamLabel(myTeam);
+
+        const partnerText =
+          teammates.length === 0
+            ? "solo"
+            : teammates.length === 1
+              ? `with partner Seat 0${teammates[0] + 1}`
+              : `with partners ${teammates.map((s) => `Seat 0${s + 1}`).join(" & ")}`;
+
+        const myCardPoints =
+          myTeam === "re" ? event.cardPointsRe : event.cardPointsKontra;
+
+        finishDetail.textContent = `${partnerText} · ${myCardPoints} eyes · RE ${event.scoreRe.gamePoints} pts // CONTRA ${event.scoreKontra.gamePoints} pts`;
+
+        finishOverlay.classList.remove("classic-finish--hidden");
+        finishOverlay.setAttribute("aria-hidden", "false");
+        finishNewBtn.focus();
+      }
+
+      function buildCardVisual(card: Card): HTMLElement {
+        const visual = document.createElement("div");
+        visual.className = "classic-card__visual";
+        visual.setAttribute("aria-hidden", "true");
+
+        const label = document.createElement("span");
+        label.className = "classic-card__main-label";
+        label.textContent = cardFace(card);
+        visual.append(label);
+
+        const cornerTL = document.createElement("span");
+        cornerTL.className = "classic-card__corner classic-card__corner--tl";
+        cornerTL.textContent = card.rank;
+        visual.append(cornerTL);
+
+        const pip = document.createElement("span");
+        pip.className = "classic-card__pip";
+        pip.textContent = shortSuit(card.suit);
+        visual.append(pip);
+
+        const cornerBR = document.createElement("span");
+        cornerBR.className = "classic-card__corner classic-card__corner--br";
+        cornerBR.textContent = card.rank;
+        visual.append(cornerBR);
+
+        return visual;
+      }
+
+      function renderTrick(overridePlays?: TrickPlay[]): void {
+        const plays = overridePlays || game.state.trick;
+        const get = (seat: Seat) =>
+          plays.find((p) => p.seat === seat)?.card ?? null;
+        [trickCard0, trickCard1, trickCard2, trickCard3].forEach((el, i) => {
+          const card = get(i as Seat);
+          el.innerHTML = "";
+          el.style.transform = "";
+          el.style.opacity = "";
+          el.className = `classic-pile classic-pile--${["s", "w", "n", "e"][i]}${card ? " classic-pile--active" : ""}`;
+          if (card) {
+            el.append(buildCardVisual(card));
+            el.setAttribute("data-suit", card.suit);
+            el.setAttribute(
+              "aria-label",
+              `${SEAT_LABEL[i as Seat]} played ${cardLabel(card)}`,
+            );
+          } else {
+            el.removeAttribute("data-suit");
+            el.setAttribute("aria-label", `${SEAT_LABEL[i as Seat]} waiting`);
+          }
+        });
+      }
+
+      function computeLeadHint(): { lead: string; follow: string } {
+        if (game.state.trick.length === 0)
+          return { lead: "LEAD: ANY", follow: "FOLLOW: --" };
+        const leadCard = game.state.trick[0].card;
+        const leadIsTrump = isTrump(leadCard, game.state.gameMode);
+        const lead = leadIsTrump
+          ? "LEAD: TRUMP"
+          : `LEAD: ${leadCard.suit.toUpperCase()}`;
+        const myHand = game.state.hands[0];
+        const legal = new Set(legalMoves(game.state, 0));
+        const mustFollow = legal.size > 0 && legal.size < myHand.length;
+        if (!mustFollow) return { lead, follow: "FOLLOW: FREE" };
+        return {
+          lead,
+          follow: leadIsTrump
+            ? "FOLLOW: TRUMP"
+            : `FOLLOW: ${leadCard.suit.toUpperCase()}`,
+        };
+      }
+
+      function illegalMoveHint(): string {
+        if (game.state.trick.length === 0) return "You can lead any card.";
+        const leadCard = game.state.trick[0].card;
+        if (isTrump(leadCard, game.state.gameMode))
+          return "Illegal move: you must play trump if you have trump.";
+        return `Illegal move: you must follow suit (${leadCard.suit}).`;
+      }
+
+      function showHint(text: string): void {
+        statusLine.textContent = text;
+        window.setTimeout(() => {
+          if (statusLine.textContent === text) renderMeta();
+        }, 1200);
+      }
+
+      function seatCapturedPoints(seat: Seat): number {
+        return game.state.capturedBySeat[seat].reduce(
+          (sum, card) => sum + cardPoints(card.rank),
+          0,
+        );
+      }
+
+      function focusRovingButton(nextIndex: number): void {
+        const buttons = Array.from(handList.querySelectorAll("button"));
+        if (buttons.length === 0) return;
+        rovingIndex = Math.max(0, Math.min(nextIndex, buttons.length - 1));
+        for (let i = 0; i < buttons.length; i += 1)
+          buttons[i].tabIndex = i === rovingIndex ? 0 : -1;
+        buttons[rovingIndex].focus();
+      }
+
+      function installHandKeyboardNavigation(): void {
+        handList.addEventListener("keydown", (event) => {
+          const buttons = Array.from(handList.querySelectorAll("button"));
+          if (buttons.length === 0) return;
+          const active = document.activeElement;
+          const index = buttons.findIndex((button) => button === active);
+          const current = index >= 0 ? index : rovingIndex;
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            focusRovingButton(Math.min(current + 1, buttons.length - 1));
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            focusRovingButton(Math.max(current - 1, 0));
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            focusRovingButton(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            focusRovingButton(buttons.length - 1);
+          } else if (
+            (event.key === "Enter" || event.key === " ") &&
+            active instanceof HTMLButtonElement
+          ) {
+            event.preventDefault();
+            active.click();
+          }
+        });
+      }
+
+      function renderHand(): void {
+        handList.innerHTML = "";
+        const myHand = [...game.state.hands[0]].sort((a, b) => {
+          const aT = isTrump(a, game.state.gameMode);
+          const bT = isTrump(b, game.state.gameMode);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          return (
+            a.suit.localeCompare(b.suit) ||
+            cardPoints(b.rank) - cardPoints(a.rank)
+          );
+        });
+        const isSoloPhase = game.state.phase === "solo_selection";
+        const legal =
+          game.state.phase === "playing"
+            ? new Set(legalMoves(game.state, 0))
+            : new Set<string>();
+        const myTurn =
+          game.state.phase === "playing" &&
+          !game.state.finished &&
+          game.state.currentSeat === 0 &&
+          !isTrickPaused &&
+          !isActionLocked;
+        const clamped = Math.min(rovingIndex, Math.max(0, myHand.length - 1));
+
+        myHand.forEach((card, index) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          const isLegal = legal.has(card.id);
+
+          let cardClass = "classic-card";
+          if (game.state.phase === "playing") {
+            cardClass += isLegal
+              ? " classic-card--legal"
+              : " classic-card--illegal";
+          } else if (isSoloPhase) {
+            cardClass += " classic-card--solo";
+          }
+
+          btn.type = "button";
+          btn.className = cardClass;
+          btn.dataset.cardId = card.id;
+          btn.dataset.suit = card.suit;
+          btn.disabled =
+            !myTurn || (game.state.phase === "playing" && !isLegal);
+          btn.tabIndex = myTurn && index === clamped ? 0 : -1;
+          btn.append(buildCardVisual(card));
+
+          const trumpText = isTrump(card, game.state.gameMode)
+            ? "trump"
+            : "non-trump";
+          const statusText =
+            game.state.phase === "playing" ? (isLegal ? "" : ", illegal") : "";
+
+          btn.setAttribute(
+            "aria-label",
+            `${cardLabel(card)}, ${trumpText}${statusText}`,
+          );
+          btn.addEventListener("click", () => {
+            if (
+              isActionLocked ||
+              isTrickPaused ||
+              game.state.currentSeat !== 0 ||
+              game.state.finished
+            )
+              return;
+            lastFocusedCardId = card.id;
+            if (!isLegal) {
+              showHint(illegalMoveHint());
+              return;
+            }
+            isActionLocked = true;
+            step({ type: "PlayCard", seat: 0, cardId: card.id });
+          });
+          li.append(btn);
+          handList.append(li);
+        });
+      }
+
+      function manageFocus(): void {
+        if (game.state.finished) {
+          newHandBtn.focus();
+          return;
+        }
+        if (game.state.currentSeat !== 0) return;
+        const buttons = Array.from(handList.querySelectorAll("button"));
+        if (buttons.length === 0) return;
+        const target = lastFocusedCardId
+          ? buttons.find((b) => b.dataset.cardId === lastFocusedCardId)
+          : null;
+        const idx = target ? buttons.indexOf(target) : 0;
+        focusRovingButton(idx);
+      }
+
+      const announceBar = getEl<HTMLDivElement>(".js-announce-bar");
+
+      function announcementButtonLabel(d: AnnouncementDeclaration): string {
+        if (d === "Kontra") return "CONTRA";
+        if (d === "Re") return "RE";
+        if (d === "Schwarz") return "BLACK";
+        if (d === "No90") return "NO 90";
+        if (d === "No60") return "NO 60";
+        if (d === "No30") return "NO 30";
+        return "";
+      }
+
+      function renderAnnouncements(): void {
+        announceBar.innerHTML = "";
+
+        const made = document.createElement("div");
+        made.className = "classic-announce-made";
+        made.setAttribute("aria-label", "Announcements made");
+
+        const byTeam = (team: Team) =>
+          game.state.announcements
+            .filter((a) => a.team === team)
+            .sort((a, b) => a.trickIndex - b.trickIndex)
+            .map((a) => a.declaration);
+
+        const reDecls = byTeam("re");
+        const kontraDecls = byTeam("kontra");
+        const summaryParts: string[] = [];
+        const whoAnnounced = (team: Team): string => {
+          const baseDecl: AnnouncementDeclaration =
+            team === "re" ? "Re" : "Kontra";
+          const base = game.state.announcements.find(
+            (a) => a.team === team && a.declaration === baseDecl,
+          );
+          return base ? ` (${SEAT_LABEL[base.seat]})` : "";
+        };
+
+        if (reDecls.length)
+          summaryParts.push(
+            `RE${whoAnnounced("re")}: ${reDecls.map(announcementButtonLabel).join(" · ")}`,
+          );
+        if (kontraDecls.length)
+          summaryParts.push(
+            `CONTRA${whoAnnounced("kontra")}: ${kontraDecls.map(announcementButtonLabel).join(" · ")}`,
+          );
+        if (summaryParts.length) {
+          const text = document.createElement("span");
+          text.className = "classic-announce-text";
+          text.textContent = summaryParts.join("  |  ");
+          made.append(text);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "classic-announce-actions";
+        actions.setAttribute("aria-label", "Available announcements");
+
+        const legal = legalAnnouncements(game.state, 0, RULESET);
+        for (const d of legal) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "classic-btn classic-btn--announce";
+          btn.textContent = announcementButtonLabel(d);
+          btn.addEventListener("click", () => {
+            step({ type: "Announce", seat: 0, declaration: d });
+          });
+          actions.append(btn);
+        }
+
+        if (made.childElementCount) announceBar.append(made);
+        if (actions.childElementCount) announceBar.append(actions);
+      }
+
+      function renderMeta(): void {
+        matchLine.textContent = seedLabel(game.state.seed);
+        const viewerEvidence = computeHardTeamEvidence({
+          seat: 0,
+          hand: game.state.hands[0],
+          currentTrick: game.state.trick,
+          completedTricks: game.state.completedTricks,
+          gameMode: game.state.gameMode,
+          announcements: game.state.announcements,
+        });
+        const seatEls = [seatS, seatW, seatN, seatE];
+        seatEls.forEach((el) => {
+          delete el.dataset.teamLabel;
+          delete el.dataset.teamScope;
+          delete el.dataset.pigletLeft;
+        });
+
+        seatS.textContent = `${SEAT_LABEL[0]} // ${game.state.hands[0].length}`;
+        seatW.textContent = `${SEAT_LABEL[1]} // ${game.state.hands[1].length}`;
+        seatN.textContent = `${SEAT_LABEL[2]} // ${game.state.hands[2].length}`;
+        seatE.textContent = `${SEAT_LABEL[3]} // ${game.state.hands[3].length}`;
+
+        const trumpSuit = getTrumpSuit(game.state.gameMode);
+        let activePigletSeat: Seat | null = null;
+        if (
+          RULESET.schweine.mode !== "disabled" &&
+          game.state.schweineActiveSeat !== null &&
+          trumpSuit !== null
+        ) {
+          const playedByActiveSeat = [
+            ...game.state.completedTricks.flatMap((trick) => trick.plays),
+            ...game.state.trick,
+          ].filter(
+            (play) =>
+              play.wasLegal &&
+              play.seat === game.state.schweineActiveSeat &&
+              play.card.suit === trumpSuit &&
+              play.card.rank === "A",
+          ).length;
+          const remaining = Math.max(0, 2 - Math.min(2, playedByActiveSeat));
+          if (remaining === 1) activePigletSeat = game.state.schweineActiveSeat;
+        }
+
+        seatEls.forEach((el, i) => {
+          const seat = i as Seat;
+          const publicHint = viewerEvidence.public[seat];
+          const mergedHint = viewerEvidence.merged[seat];
+          const visibleHint =
+            publicHint !== "unknown"
+              ? { team: publicHint, scope: "public" as const }
+              : seat === 0 && mergedHint !== "unknown"
+                ? { team: mergedHint, scope: "private" as const }
+                : null;
+          if (visibleHint) {
+            el.dataset.teamLabel = teamLabel(visibleHint.team);
+            el.dataset.teamScope = visibleHint.scope;
+          }
+          if (activePigletSeat === seat) {
+            el.dataset.pigletLeft = "true";
+          }
+          const teamLabelText = visibleHint
+            ? `${visibleHint.scope === "public" ? "public" : "private"} team ${teamLabel(visibleHint.team)}`
+            : "team hidden";
+          const pigletLabel =
+            activePigletSeat === seat ? ", Piglets: one diamond ace left" : "";
+          el.setAttribute(
+            "aria-label",
+            `${SEAT_LABEL[seat]}, ${teamLabelText}, ${game.state.hands[seat].length} cards${pigletLabel}`,
+          );
+
+          const isTurn =
+            game.state.phase === "solo_selection"
+              ? game.state.soloSelection.currentSeat === i
+              : game.state.currentSeat === i;
+          el.dataset.turn = !isDealing && isTurn ? "true" : "false";
+        });
+
+        const { lead, follow } = computeLeadHint();
+        leadLine.textContent = lead;
+        followLine.textContent = follow;
+        modeLine.textContent = `MODE: ${modeStatusLabel()}`;
+        scoreEls.forEach((el, i) => {
+          el.textContent = seatCapturedPoints(i as Seat).toString();
+        });
+
+        renderAnnouncements();
+
+        if (isDealing) {
+          turnLine.textContent = "Dealing...";
+          statusLine.textContent = "Dealing cards...";
+        } else if (game.state.finished) {
+          turnLine.textContent = "Hand Over";
+          statusLine.textContent = "Hand Over.";
+        } else if (game.state.phase === "solo_selection") {
+          const current = game.state.soloSelection.currentSeat;
+          const highest = game.state.soloSelection.highestSolo;
+          const bid =
+            highest &&
+            ` Current bid: ${soloTypeLabel(highest.soloType)} (${SEAT_LABEL[highest.seat]}).`;
+          turnLine.textContent = `Query: ${SEAT_LABEL[current as Seat]}`;
+          statusLine.textContent =
+            current === 0
+              ? `Choose Solo or Pass.${bid ?? ""}`
+              : `Waiting for solos...${bid ?? ""}`;
+        } else {
+          turnLine.textContent = `Turn: ${SEAT_LABEL[game.state.currentSeat]}`;
+          if (game.state.currentSeat === 0)
+            statusLine.textContent = "Your move.";
+          else statusLine.textContent = "Waiting...";
+        }
+      }
+
+      function handleEvents(events: EngineEvent[]): void {
+        for (const event of events) {
+          if (event.type === "CardPlayed") {
+            const seat = event.seat;
+            const card = findCard(event.cardId);
+            if (card) {
+              const isSchweine =
+                trumpPower(
+                  card,
+                  game.state.schweineActiveSeat,
+                  seat,
+                  RULESET,
+                  game.state.gameMode,
+                ) === 500;
+              const isFuchs = card.suit === "diamonds" && card.rank === "A";
+              const label = isSchweine ? " (Piglets)" : isFuchs ? " (Fox)" : "";
+              const text = `${SEAT_LABEL[seat]} played ${cardLabel(card)}${label}${event.wasLegal ? "" : " (Renege!)"}`;
+              addLog(text);
+              srActionLine.textContent = text;
+            }
+            if (!events.some((e) => e.type === "TrickWon")) renderTrick();
+          }
+          if (event.type === "TrickWon") {
+            const winnerLabel = SEAT_LABEL[event.winner];
+            statusLine.textContent =
+              winnerLabel === "You" ? "Yours" : `${winnerLabel} Wins`;
+            srTrickLine.textContent = `Trick ${event.trickIndex} won by ${winnerLabel}.`;
+            const lastTrick = game.state.completedTricks.find(
+              (t) => t.index === event.trickIndex,
+            );
+            if (lastTrick) renderTrick(lastTrick.plays);
+            animateCapture(event.winner);
+          }
+          if (event.type === "RenonceProved") {
+            const text = localizeDokoText(event.text);
+            showFx(text);
+            addLog(text);
+          }
+          if (event.type === "SpecialCallout") {
+            const text = localizeDokoText(event.callout.text);
+            addLog(text);
+            showFx(text);
+          }
+          if (event.type === "PovertyExchanged") {
+            const who = SEAT_LABEL[event.povertySeat];
+            addLog(
+              `${who} exchanged cards. ${event.trumpsBackToPoverty} trumps returned.`,
+            );
+          }
+          if (event.type === "AnnouncementMade") {
+            const who = SEAT_LABEL[event.seat];
+            const text = `${who} announced ${announcementButtonLabel(event.declaration)}.`;
+            addLog(text);
+            showFx(announcementButtonLabel(event.declaration));
+            srActionLine.textContent = text;
+          }
+          if (event.type === "SoloChosen") {
+            const who = SEAT_LABEL[event.seat];
+            const what = soloTypeLabel(event.soloType);
+            const text = `${who} bid ${what}.`;
+            addLog(text);
+            showFx(what.toUpperCase());
+            srActionLine.textContent = text;
+          }
+          if (event.type === "SoloPassed") {
+            const who = SEAT_LABEL[event.seat];
+            const text = `${who} passed.`;
+            addLog(text);
+            srActionLine.textContent = text;
+          }
+          if (event.type === "SoloSelectionFinished") {
+            if (event.gameMode.kind === "normal") {
+              addLog("Game starts: Normal mode.");
+            } else if (event.gameMode.kind === "solo") {
+              addLog(
+                `Game starts: Solo (${soloTypeLabel(event.gameMode.soloType)}) by ${SEAT_LABEL[event.gameMode.soloSeat]}.`,
+              );
+            } else if (event.gameMode.kind === "marriage") {
+              const who = SEAT_LABEL[event.gameMode.holderSeat];
+              addLog(`Game starts: Marriage by ${who}.`);
+              showFx("MARRIAGE");
+            } else if (event.gameMode.kind === "poverty") {
+              const who = SEAT_LABEL[event.gameMode.povertySeat];
+              addLog(`Game starts: Poverty by ${who}.`);
+              showFx("POVERTY");
+            }
+          }
+          if (event.type === "MarriagePartnerFound") {
+            const holder = SEAT_LABEL[event.holderSeat];
+            const partner = SEAT_LABEL[event.partnerSeat];
+            const text = `Marriage resolved: ${holder} + ${partner} are partners.`;
+            addLog(text);
+            showFx("PARTNER FOUND");
+            srActionLine.textContent = text;
+          }
+          if (event.type === "MarriageForced") {
+            const holder = SEAT_LABEL[event.holderSeat];
+            const text = `Marriage forced: ${holder} plays 1v3.`;
+            addLog(text);
+            showFx("FORCED");
+            srActionLine.textContent = text;
+          }
+          if (event.type === "HandFinished") {
+            addLog(`Hand Finished. Winner: ${teamLabel(event.winningTeam)}`);
+            if (isCurriculumMode) {
+              dumpTelemetry(game.state, gameHistory);
+            }
+            showFinish(event);
+          }
+        }
+      }
+
+      function dumpTelemetry(state: any, history: GameAction[]): void {
+        const payload = {
+          schemaVersion: "1.0",
+          engineVersion: "v2-polish",
+          opponentPool: isCurriculumMode
+            ? seatOpponents
+            : ["human", "heuristic-v1", "heuristic-v1", "heuristic-v1"],
+          seed: state.seed,
+          rulesetId: isOblivious ? "oblivious" : "standard",
+          history,
+          finalStateHash: "none",
+        };
+        console.log("=== TELEMETRY DUMP ===");
+        console.log(JSON.stringify(payload));
+        console.log("======================");
+
+        // Simple attempt to send to dev endpoint
+        if (import.meta.env.DEV && typeof fetch !== "undefined") {
+          fetch("/api/telemetry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }).catch(() => {});
+        }
+      }
+
+      function animateCapture(winner: Seat): void {
+        isTrickPaused = true;
+        // Immediately lock the hand so cards don't feel "sticky" during capture pause.
+        renderHand();
+        const winnerEl = [seatS, seatW, seatN, seatE][winner];
+
+        const t1 = window.setTimeout(() => {
+          const activePiles = root.querySelectorAll(".classic-pile--active");
+          activePiles.forEach((p) => {
+            p.classList.add("classic-pile--capturing");
+            const winnerRect = winnerEl.getBoundingClientRect();
+            const pileRect = p.getBoundingClientRect();
+            const dx = winnerRect.left - pileRect.left;
+            const dy = winnerRect.top - pileRect.top;
+            (p as HTMLElement).style.transform =
+              `translate(${dx}px, ${dy}px) scale(0.2)`;
+            (p as HTMLElement).style.opacity = "0";
+          });
+
+          const t2 = window.setTimeout(() => {
+            isTrickPaused = false;
+            renderAll();
+            maybeRunBots();
+          }, 600);
+          captureTimers.push(t2);
+        }, 2000);
+        captureTimers.push(t1);
+      }
+
+      function findCard(cardId: string): Card | null {
+        for (const seat of [0, 1, 2, 3] as Seat[]) {
+          const card = game.state.hands[seat].find(
+            (entry) => entry.id === cardId,
+          );
+          if (card) return card;
+        }
+        for (const play of game.state.trick)
+          if (play.card.id === cardId) return play.card;
+        for (const trick of game.state.completedTricks) {
+          for (const play of trick.plays)
+            if (play.card.id === cardId) return play.card;
+        }
+        return null;
+      }
+
+      function getBotSpeed(): number {
+        const raw = localStorage.getItem("dkhub_prefs");
+        if (raw) {
+          try {
+            const prefs = JSON.parse(raw);
+            return parseInt(prefs.botSpeed, 10) || 800;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        return 800;
+      }
+
+      function isHumanTurn(): boolean {
+        if (isDealing) return true;
+        if (game.state.phase === "solo_selection") {
+          return game.state.soloSelection.currentSeat === 0;
+        }
+        if (game.state.phase === "poverty_acceptance") {
+          return game.state.currentSeat === 0;
+        }
+        if (game.state.phase === "poverty_exchange") {
+          return game.state.currentSeat === 0;
+        }
+        return game.state.currentSeat === 0;
+      }
+
+      function maybeRunBots(): void {
+        if (!isActive) return;
+        if (game.state.finished || isHumanTurn() || isTrickPaused) {
+          return;
+        }
+
+        if (botTimer) window.clearTimeout(botTimer);
+
+        botTimer = window.setTimeout(async () => {
+          // Re-check conditions after timeout
+          if (
+            !isActive ||
+            game.state.finished ||
+            isHumanTurn() ||
+            isTrickPaused
+          ) {
+            return;
+          }
+
+          const seat =
+            game.state.phase === "solo_selection"
+              ? game.state.soloSelection.currentSeat
+              : game.state.currentSeat;
+
+          const currentBotType = getBotType();
+          const useMixedPool =
+            isCurriculumMode || currentBotType === "random-mix";
+
+          // If toggle was clicked mid-game, ensure we have randomized opponents
+          if (
+            useMixedPool &&
+            seatOpponents[1] === "heuristic-v1" &&
+            seatOpponents[2] === "heuristic-v1"
+          ) {
+            const pool: BotType[] = ["heuristic-v1", "heuristic-v2"];
+            const selection: BotType[] = [
+              "heuristic-v1",
+              "heuristic-v2",
+              pool[Math.floor(Math.random() * pool.length)]!,
+            ];
+            for (let i = selection.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [selection[i], selection[j]] = [selection[j]!, selection[i]!];
+            }
+            for (let s = 1; s < 4; s++) seatOpponents[s] = selection[s - 1]!;
+          }
+
+          const type = useMixedPool
+            ? seatOpponents[seat]
+            : (currentBotType as BotType);
+          console.log(
+            `[Doko] Bot Turn: Seat ${seat}, Phase: ${game.state.phase}, Type: ${type}`,
+          );
+
+          if (game.state.phase === "solo_selection") {
+            const botView = buildBotView(seat);
+            console.log(`[Doko] Requesting solo from ${type}...`);
+            const soloAction = await pickBotSoloByTypeAsync(
+              botView,
+              type || "heuristic-v1",
+            );
+            console.log(`[Doko] Bot solo action:`, soloAction);
+            step(soloAction);
+            return;
+          }
+
+          if (game.state.phase === "poverty_acceptance") {
+            const trumps = game.state.hands[seat].filter((c) =>
+              isTrump(c, { kind: "normal" }),
+            ).length;
+            if (trumps >= 6) {
+              step({ type: "AcceptPoverty", seat });
+            } else {
+              step({ type: "RejectPoverty", seat });
+            }
+            return;
+          }
+
+          if (game.state.phase === "poverty_exchange") {
+            const mode = game.state.gameMode;
+            if (mode.kind !== "poverty") return;
+            const povertySeat = mode.povertySeat;
+            const acceptSeat = mode.acceptedBySeat as Seat;
+
+            // If NEITHER is human, bot picks for both and completes it
+            if (povertySeat !== 0 && acceptSeat !== 0) {
+              console.log(
+                `[Doko] Bot-only Poverty Exchange between Seat ${povertySeat} and ${acceptSeat}`,
+              );
+              const povertyCards = pickPovertyExchangeCards(povertySeat);
+              const acceptCards = pickBotExchangeCards(acceptSeat);
+              step({
+                type: "ExchangePovertyCards",
+                povertySeat,
+                acceptedBySeat: acceptSeat,
+                fromPovertyCardIds: povertyCards as [string, string, string],
+                fromAcceptedCardIds: acceptCards as [string, string, string],
+              });
+            } else {
+              console.log(`[Doko] Waiting for human in Poverty Exchange`);
+            }
+            return;
+          }
+
+          if (game.state.phase !== "playing") {
+            console.warn(`[Doko] Bot stalled: Phase is ${game.state.phase}`);
+            return;
+          }
+
+          const botView = buildBotView(seat);
+
+          try {
+            console.log(`[Doko] Requesting card from ${type}...`);
+            const cardId = await pickBotCardByTypeAsync(
+              botView,
+              type || "heuristic-v1",
+            );
+            console.log(`[Doko] Bot played: ${cardId}`);
+            step({ type: "PlayCard", seat, cardId });
+          } catch (e) {
+            console.error(`[Doko] Bot failed:`, e);
+            // Fallback to heuristic V1 if ML fails
+            const fallbackId = heuristicPick(botView);
+            step({ type: "PlayCard", seat, cardId: fallbackId });
+          }
+        }, getBotSpeed());
+      }
+
+      function buildBotView(seat: Seat): BotView {
+        const legal = legalMoves(game.state, seat)
+          .map((id) => game.state.hands[seat].find((card) => card.id === id))
+          .filter((card): card is Card => card !== undefined);
+
+        return {
+          seat,
+          phase: game.state.phase,
+          hand: game.state.hands[seat],
+          currentTrick: game.state.trick,
+          completedTricks: game.state.completedTricks,
+          legalCards: legal,
+          trickIndex: game.state.trickIndex,
+          gameMode: game.state.gameMode,
+          announcements: game.state.announcements,
+          specialCallouts: game.state.specialCallouts,
+          schweineActiveSeat: game.state.schweineActiveSeat,
+          ruleset: RULESET,
+        };
+      }
+
+      function step(action: GameAction): void {
+        if (!isActive) return;
+        gameHistory.push(action);
+        game = reduce(game.state, action, RULESET);
+        handleEvents(game.events);
+        if (!isTrickPaused) {
+          renderAll();
+          maybeRunBots();
+        }
+      }
+
+      function renderAll(): void {
+        isActionLocked = false;
+        renderMeta();
+
+        if (isDealing) {
+          renderHand();
+          return;
+        }
+
+        if (game.state.phase === "playing") {
+          if (!isTrickPaused) renderTrick();
+          renderHand();
+        } else if (game.state.phase === "solo_selection") {
+          renderTrick();
+          renderSoloSelection();
+        } else if (game.state.phase === "poverty_acceptance") {
+          renderTrick();
+          renderPovertyAcceptance();
+        } else if (game.state.phase === "poverty_exchange") {
+          renderTrick();
+          renderPovertyExchange();
+        }
+        manageFocus();
+      }
+
+      function renderSoloSelection(): void {
+        renderHand(); // Show hand (will be disabled by phase check in renderHand)
+
+        if (game.state.soloSelection.currentSeat === 0) {
+          if (document.querySelector(".classic-solo-query")) return;
+
+          const myHand = game.state.hands[0];
+          const trumps = myHand.filter((c) => isTrump(c, { kind: "normal" }));
+          const hasPoverty = trumps.length <= 3;
+          const clubQueens = myHand.filter(
+            (c) => c.suit === "clubs" && c.rank === "Q",
+          );
+          const hasMarriage = clubQueens.length === 2;
+
+          const soloPriority = (type: SoloType): number => {
+            if (type === "poverty") return 0;
+            if (type === "marriage") return 1;
+            return 2;
+          };
+          const highestSolo = game.state.soloSelection.highestSolo;
+          const highestPriority = highestSolo
+            ? soloPriority(highestSolo.soloType)
+            : -1;
+          const canOvercall = (type: SoloType): boolean =>
+            highestSolo ? soloPriority(type) > highestPriority : true;
+          const overcallStatus = (type: SoloType): string => {
+            if (!highestSolo) return "";
+            if (canOvercall(type)) return "";
+            return ` disabled title="Cannot beat current bid (${soloTypeLabel(highestSolo.soloType)} by ${SEAT_LABEL[highestSolo.seat]})."`;
+          };
+
+          const passLabel =
+            hasPoverty || hasMarriage ? "Pass (Play Silent)" : "Pass";
+
+          const kings = myHand.filter((c) => c.rank === "K").length;
+          const nines = myHand.filter((c) => c.rank === "9").length;
+          const hasThrowKings = kings >= 5;
+          const hasThrowMix = kings + nines >= 8;
+          const canThrow = hasThrowKings || hasThrowMix;
+
+          const wideSpecialBtns: string[] = [];
+          // Safety defaults: put "Throw" first, then Marriage, then Poverty.
+          if (canThrow) {
+            wideSpecialBtns.push(
+              '<button type="button" class="classic-btn classic-btn--solo classic-btn--wide js-throw-cards">Throw Cards</button>',
+            );
+          }
+          if (hasMarriage) {
+            wideSpecialBtns.push(
+              `<button type="button" class="classic-btn classic-btn--solo classic-btn--wide js-choose-special" data-type="marriage"${overcallStatus("marriage")}>Marriage</button>`,
+            );
+          }
+          if (hasPoverty) {
+            wideSpecialBtns.push(
+              `<button type="button" class="classic-btn classic-btn--solo classic-btn--wide js-choose-special" data-type="poverty"${overcallStatus("poverty")}>Poverty</button>`,
+            );
+          }
+
+          const overlay = document.createElement("div");
+          overlay.className = "classic-solo-query";
+
+          let note = "";
+          if (highestSolo) {
+            const who = SEAT_LABEL[highestSolo.seat];
+            const what = soloTypeLabel(highestSolo.soloType);
+            note += `<p class="classic-hint mb-4">Current bid: ${what} (${who}). Only higher solos can overcall.</p>`;
+          }
+          if (hasPoverty)
+            note += `<p class="classic-hint mb-4">Note: You have Poverty (${trumps.length} trumps). Announce it to exchange cards, or play silent.</p>`;
+          else if (hasMarriage)
+            note += `<p class="classic-hint mb-4">Note: You have Marriage (2 Club Queens). Announce it to find a partner, or play silent.</p>`;
+
+          if (canThrow) {
+            const reason = hasThrowKings ? "5 Kings" : "8 Kings/Nines";
+            note += `<p class="classic-hint mb-4">Note: You can throw these cards (${reason}) to force a redeal.</p>`;
+          }
+
+          const hint = `<p class="classic-hint mb-4 opacity-70">Hint: The highest solo bid sets the game mode and leads the first trick. Marriage does not lead.</p>`;
+
+          const passBtn = `<button type="button" class="classic-btn classic-btn--solo${wideSpecialBtns.length === 0 ? " classic-btn--wide" : ""} js-pass-solo">${passLabel}</button>`;
+
+          overlay.innerHTML = `
+            <p class="classic-panel__h">Solo Query</p>
+            ${note}
+            ${hint}
+            <div class="classic-solo-grid">
+              ${wideSpecialBtns.join("")}
+              ${passBtn}
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="queen"${overcallStatus("queen")}>Queen Solo</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="jack"${overcallStatus("jack")}>Jack Solo</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="queen_jack"${overcallStatus("queen_jack")}>Queens + Jacks</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="fleischlos"${overcallStatus("fleischlos")}>No Trumps</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="clubs"${overcallStatus("clubs")}>Clubs Solo</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="spades"${overcallStatus("spades")}>Spades Solo</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="hearts"${overcallStatus("hearts")}>Hearts Solo</button>
+              <button type="button" class="classic-btn classic-btn--solo js-choose-solo" data-type="diamonds"${overcallStatus("diamonds")}>Diamonds Solo</button>
+            </div>
+          `;
+          document.body.append(overlay);
+
+          overlay.querySelectorAll(".js-pass-solo").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              step({ type: "PassSolo", seat: 0 });
+              overlay.remove();
+            });
+          });
+          overlay
+            .querySelector(".js-throw-cards")
+            ?.addEventListener("click", () => {
+              step({ type: "ThrowCards", seat: 0 });
+              overlay.remove();
+            });
+          overlay
+            .querySelectorAll(".js-choose-solo, .js-choose-special")
+            .forEach((btn) => {
+              btn.addEventListener("click", (e) => {
+                const type = (e.currentTarget as HTMLElement).dataset
+                  .type as SoloType;
+                step({ type: "ChooseSolo", seat: 0, soloType: type });
+                overlay.remove();
+              });
+            });
+        }
+      }
+
+      function renderPovertyAcceptance(): void {
+        renderHand();
+        if (game.state.currentSeat === 0) {
+          if (document.querySelector(".classic-poverty-query")) return;
+          const overlay = document.createElement("div");
+          overlay.className = "classic-solo-query classic-poverty-query";
+          overlay.innerHTML = `
+	            <p class="classic-panel__h">Poverty Offered</p>
+	            <p class="classic-hint mb-4">Seat ${game.state.gameMode.kind === "poverty" ? game.state.gameMode.povertySeat + 1 : "?"} has Poverty. Do you want to take their 3 trumps?</p>
+	            <div class="classic-solo-grid">
+	              <button type="button" class="classic-btn classic-btn--solo js-accept-poverty">Accept</button>
+	              <button type="button" class="classic-btn classic-btn--solo js-reject-poverty">Reject</button>
+	            </div>
+	          `;
+          document.body.append(overlay);
+
+          overlay
+            .querySelector(".js-accept-poverty")
+            ?.addEventListener("click", () => {
+              step({ type: "AcceptPoverty", seat: 0 });
+              overlay.remove();
+            });
+          overlay
+            .querySelector(".js-reject-poverty")
+            ?.addEventListener("click", () => {
+              step({ type: "RejectPoverty", seat: 0 });
+              overlay.remove();
+            });
+        }
+      }
+
+      let selectedPovertyCardIds: string[] = [];
+
+      function renderPovertyExchange(): void {
+        const isPovertySeat =
+          game.state.gameMode.kind === "poverty" &&
+          game.state.gameMode.povertySeat === 0;
+        const isAcceptSeat =
+          game.state.gameMode.kind === "poverty" &&
+          game.state.gameMode.acceptedBySeat === 0;
+        const isHumanInExchange = isPovertySeat || isAcceptSeat;
+        const exchangeRole = isPovertySeat
+          ? "poverty"
+          : isAcceptSeat
+            ? "accept"
+            : null;
+
+        // Render hand with selectable cards if it's human turn
+        handList.innerHTML = "";
+        const myHand = [...game.state.hands[0]].sort((a, b) => {
+          const aT = isTrump(a, game.state.gameMode);
+          const bT = isTrump(b, game.state.gameMode);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          return (
+            a.suit.localeCompare(b.suit) ||
+            cardPoints(b.rank) - cardPoints(a.rank)
+          );
+        });
+
+        const requiredTrumpIds =
+          exchangeRole === "poverty"
+            ? myHand
+                .filter((c) =>
+                  isTrump(
+                    c,
+                    game.state.gameMode,
+                    game.state.schweineActiveSeat,
+                    RULESET,
+                  ),
+                )
+                .map((c) => c.id)
+            : [];
+
+        // Keep selection sane across renders: drop missing cards, force-in required trumps.
+        const myHandIds = new Set(myHand.map((c) => c.id));
+        selectedPovertyCardIds = selectedPovertyCardIds.filter((id) =>
+          myHandIds.has(id),
+        );
+        if (requiredTrumpIds.length > 0) {
+          for (const id of requiredTrumpIds) {
+            if (!selectedPovertyCardIds.includes(id))
+              selectedPovertyCardIds.push(id);
+          }
+        }
+        if (selectedPovertyCardIds.length > 3) {
+          const required = new Set(requiredTrumpIds);
+          const keep: string[] = [];
+          for (const id of selectedPovertyCardIds) {
+            if (keep.length >= 3) break;
+            if (required.size > 0 && !required.has(id)) continue;
+            keep.push(id);
+          }
+          if (keep.length < 3) {
+            for (const id of selectedPovertyCardIds) {
+              if (keep.length >= 3) break;
+              if (keep.includes(id)) continue;
+              keep.push(id);
+            }
+          }
+          selectedPovertyCardIds = keep.slice(0, 3);
+        }
+
+        myHand.forEach((card) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          const isSelected = selectedPovertyCardIds.includes(card.id);
+          const isRequiredTrump = requiredTrumpIds.includes(card.id);
+
+          btn.type = "button";
+          btn.className = `classic-card classic-card--solo${isSelected ? " classic-card--selected" : ""}`;
+          btn.dataset.cardId = card.id;
+          btn.disabled = !isHumanInExchange;
+          btn.append(buildCardVisual(card));
+
+          if (isHumanInExchange) {
+            btn.addEventListener("click", () => {
+              if (isRequiredTrump) return;
+              if (isSelected) {
+                selectedPovertyCardIds = selectedPovertyCardIds.filter(
+                  (id) => id !== card.id,
+                );
+                for (const id of requiredTrumpIds) {
+                  if (!selectedPovertyCardIds.includes(id))
+                    selectedPovertyCardIds.push(id);
+                }
+              } else if (selectedPovertyCardIds.length < 3) {
+                if (exchangeRole === "poverty") {
+                  const needsMoreRequired = requiredTrumpIds.some(
+                    (id) => !selectedPovertyCardIds.includes(id),
+                  );
+                  if (needsMoreRequired) return;
+                }
+                selectedPovertyCardIds.push(card.id);
+              }
+              renderAll();
+            });
+          }
+
+          li.append(btn);
+          handList.append(li);
+        });
+
+        if (isHumanInExchange) {
+          if (document.querySelector(".classic-exchange-query")) {
+            const btn = document.querySelector(
+              ".js-confirm-exchange",
+            ) as HTMLButtonElement;
+            if (btn) btn.disabled = selectedPovertyCardIds.length !== 3;
+            return;
+          }
+          const overlay = document.createElement("div");
+          overlay.className = "classic-solo-query classic-exchange-query";
+          const hint =
+            exchangeRole === "poverty"
+              ? requiredTrumpIds.length > 0
+                ? `You must give all your trumps (${requiredTrumpIds.length}). Select additional cards to make 3.`
+                : "You have no trumps. Select any 3 cards."
+              : "Select 3 cards to return to the Poverty player.";
+          overlay.innerHTML = `
+	            <p class="classic-panel__h">Exchange Cards</p>
+	            <p class="classic-hint mb-4">${hint}</p>
+	            <button type="button" class="classic-btn js-confirm-exchange" disabled>Give 3 Cards</button>
+	          `;
+          document.body.append(overlay);
+
+          overlay
+            .querySelector(".js-confirm-exchange")
+            ?.addEventListener("click", () => {
+              // This is a bit tricky: the exchange happens in one action in the engine
+              // but the UI needs to collect from both.
+              // For now, let's simplify: if human is one of them, they select, then we trigger.
+              // If BOTH are human (rare/not possible in single player), it breaks.
+              // In single player, one is always a bot.
+
+              if (game.state.gameMode.kind !== "poverty") return;
+              const povertySeat = game.state.gameMode.povertySeat;
+              const acceptSeat = game.state.gameMode.acceptedBySeat as Seat;
+
+              let povertyCards: string[] = [];
+              let acceptCards: string[] = [];
+
+              if (isPovertySeat) {
+                povertyCards = selectedPovertyCardIds;
+                // Bot chooses 3 cards (lowest non-trumps or lowest trumps)
+                acceptCards = pickBotExchangeCards(acceptSeat);
+              } else {
+                acceptCards = selectedPovertyCardIds;
+                povertyCards = pickPovertyExchangeCards(povertySeat);
+              }
+
+              step({
+                type: "ExchangePovertyCards",
+                povertySeat,
+                acceptedBySeat: acceptSeat,
+                fromPovertyCardIds: povertyCards as [string, string, string],
+                fromAcceptedCardIds: acceptCards as [string, string, string],
+              });
+              selectedPovertyCardIds = [];
+              overlay.remove();
+            });
+        }
+      }
+
+      function pickPovertyExchangeCards(seat: Seat): string[] {
+        const hand = [...game.state.hands[seat]];
+        const trumps = hand.filter((c) =>
+          isTrump(
+            c,
+            game.state.gameMode,
+            game.state.schweineActiveSeat,
+            RULESET,
+          ),
+        );
+        const nonTrumps = hand.filter(
+          (c) =>
+            !isTrump(
+              c,
+              game.state.gameMode,
+              game.state.schweineActiveSeat,
+              RULESET,
+            ),
+        );
+        const pick: Card[] = [];
+
+        pick.push(...trumps.slice(0, 3));
+        if (pick.length < 3) {
+          pick.push(
+            ...nonTrumps
+              .sort((a, b) => cardPoints(a.rank) - cardPoints(b.rank))
+              .slice(0, 3 - pick.length),
+          );
+        }
+
+        return pick.slice(0, 3).map((c) => c.id);
+      }
+
+      function pickBotExchangeCards(seat: Seat): string[] {
+        // Simple bot: pick 3 lowest value cards
+        return [...game.state.hands[seat]]
+          .sort((a, b) => cardPoints(a.rank) - cardPoints(b.rank))
+          .slice(0, 3)
+          .map((c) => c.id);
+      }
+
+      function startHand(): void {
+        if (!isActive) return;
+        if (botTimer) window.clearTimeout(botTimer);
+        if (fxTimer) window.clearTimeout(fxTimer);
+        if (dealTimer) window.clearTimeout(dealTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        dealTimer = null;
+        isTrickPaused = false;
+        isActionLocked = false;
+        hideFinish();
+        document.querySelector(".classic-solo-query")?.remove();
+        document.querySelector(".classic-poverty-query")?.remove();
+        document.querySelector(".classic-exchange-query")?.remove();
+
+        currentDealer = nextSeat(currentDealer);
+        game = createEngine(undefined, RULESET, currentDealer);
+        gameHistory = [];
+        eventLog.innerHTML = "";
+
+        const currentBotType = getBotType();
+        if (isCurriculumMode || currentBotType === "random-mix") {
+          const pool: BotType[] = ["heuristic-v1", "heuristic-v2"];
+
+          // Selection for the 3 bot seats (1, 2, 3)
+          const selection: BotType[] = [
+            "heuristic-v1",
+            "heuristic-v2",
+            pool[Math.floor(Math.random() * pool.length)]!,
+          ];
+
+          // Shuffle selection
+          for (let i = selection.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [selection[i], selection[j]] = [selection[j]!, selection[i]!];
+          }
+
+          for (let s = 1; s < 4; s++) {
+            seatOpponents[s] = selection[s - 1]!;
+          }
+
+          const source = isCurriculumMode ? "Curriculum" : "Random Mix";
+          addLog(
+            `${source} Opponents: ${seatOpponents
+              .slice(1)
+              .map((s) => s.toUpperCase())
+              .join(", ")}`,
+          );
+        }
+
+        isDealing = true;
+        renderAll();
+
+        dealTimer = window.setTimeout(() => {
+          if (!isActive) return;
+          isDealing = false;
+          handleEvents(game.events);
+          renderAll();
+          maybeRunBots();
+          dealTimer = null;
+        }, 1200);
+      }
+
+      function stopGame(): void {
+        isActive = false;
+        if (botTimer) window.clearTimeout(botTimer);
+        if (fxTimer) window.clearTimeout(fxTimer);
+        if (dealTimer) window.clearTimeout(dealTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        dealTimer = null;
+        isDealing = false;
+        isTrickPaused = false;
+        isActionLocked = false;
+        cleanupGlobalUI();
+        hideFinish();
+        currentDealer = 3;
+      }
+
+      function onHubEnter(ev: Event): void {
+        if (!inHub) return;
+        const mode = (ev as CustomEvent).detail?.mode;
+        if (mode !== root.getAttribute("data-dkhub-mode")) return;
+        isActive = true;
+        startHand();
+      }
+
+      function onHubExit(): void {
+        if (!inHub) return;
+        stopGame();
+      }
+
+      newHandBtn.addEventListener("click", startHand);
+      finishNewBtn.addEventListener("click", startHand);
+
+      const returnHubBtn = root.querySelector(
+        ".js-return-hub",
+      ) as HTMLButtonElement | null;
+      returnHubBtn?.addEventListener("click", () => {
+        stopGame();
+        const exitBtn = document.getElementById(
+          "exitGame",
+        ) as HTMLButtonElement | null;
+        if (exitBtn) {
+          exitBtn.click();
+        } else {
+          window.location.href = "/doppelkopf/";
+        }
+      });
+
+      window.addEventListener("dkhub-enter", onHubEnter);
+      window.addEventListener("dkhub-exit", onHubExit);
+      installHandKeyboardNavigation();
+      if (isActive) startHand();
+
+      document.addEventListener(
+        "astro:before-swap",
+        () => {
+          stopGame();
+          window.removeEventListener("dkhub-enter", onHubEnter);
+          window.removeEventListener("dkhub-exit", onHubExit);
+          window.removeEventListener(
+            "dkhub-settings-changed",
+            applyHubSettings,
+          );
+        },
+        { once: true },
+      );
+    });
+  }
+
+  document.addEventListener("astro:page-load", init);
+  init();
+</script>
+
+<style>
+  .classic-mode {
+    min-height: 100svh;
+    width: 100%;
+    background: radial-gradient(
+      circle at 30% 5%,
+      #e7f6ee 0%,
+      #f6f6f2 45%,
+      #f1eadc 100%
+    );
+    color: #0b0b0b;
+    font-family: "Space Grotesk Variable", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem;
+    box-sizing: border-box;
+    overscroll-behavior: none;
+  }
+
+  .classic-shell {
+    width: 100%;
+    max-width: 42rem;
+    flex: 1;
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(6rem, auto);
+    grid-template-areas:
+      "top"
+      "table"
+      "score"
+      "hand"
+      "log";
+    min-height: 0;
+  }
+
+  /* Prevent grid blowout on all children */
+  .classic-top,
+  .classic-table,
+  .classic-score-area,
+  .classic-hand-area,
+  .classic-log-area {
+    min-width: 0;
+  }
+
+  .classic-status {
+    width: 100%;
+    max-width: 42rem;
+    border: 2px solid #0b0b0b;
+    padding: 0.4rem 0.6rem;
+    background: #fff;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    margin-bottom: 0.4rem;
+    box-sizing: border-box;
+  }
+
+  .classic-top {
+    grid-area: top;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 2px solid #0b0b0b;
+    background: #fff;
+    padding: 0.4rem 0.6rem;
+  }
+  .classic-top__left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .classic-top__right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .classic-tag {
+    background: #ffe24a;
+    border: 1px solid #0b0b0b;
+    padding: 0.1rem 0.3rem;
+    font-weight: 800;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+  }
+  .classic-mono {
+    font-family: monospace;
+    font-weight: 800;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+  }
+  :global(.classic-hint) {
+    font-weight: 800;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+  :global(.classic-btn--solo) {
+    width: 100%;
+    padding: 0.6rem 0.4rem;
+    font-size: 0.75rem;
+  }
+  :global(.classic-btn--wide) {
+    grid-column: 1 / -1;
+  }
+  .classic-hint--sub {
+    opacity: 0.6;
+    font-size: 0.6rem;
+    margin-left: 0.5rem;
+  }
+  :global(.classic-btn) {
+    border: 2px solid #0b0b0b;
+    background: #0b0b0b;
+    color: #fff;
+    padding: 0.2rem 0.5rem;
+    font: inherit;
+    font-weight: 800;
+    font-size: 0.65rem;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  :global(.classic-btn:disabled) {
+    opacity: 0.45;
+    cursor: default;
+  }
+  :global(.classic-btn--announce) {
+    background: #fff200;
+    color: #0b0b0b;
+  }
+  .classic-announce-bar {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .classic-announce-made {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    max-width: 100%;
+  }
+  .classic-announce-text {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: min(42ch, 38vw);
+  }
+  .classic-announce-actions {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .classic-table {
+    grid-area: table;
+    position: relative;
+    border: 2px solid #0b0b0b;
+    background: radial-gradient(
+      circle at 50% 35%,
+      #2e8b62 0%,
+      #1f6a4b 55%,
+      #164a36 100%
+    );
+    aspect-ratio: 4 / 3;
+    max-height: 35svh;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .classic-seat {
+    position: absolute;
+    border: 1px solid #0b0b0b;
+    background: #fff;
+    padding: 0.1rem 0.3rem;
+    font-weight: 800;
+    font-size: 0.55rem;
+    z-index: 10;
+    text-transform: uppercase;
+  }
+  .classic-seat[data-team-label]::after {
+    content: " (" attr(data-team-label) ")";
+  }
+  .classic-seat[data-team-scope="private"]::after {
+    color: #666;
+  }
+  .classic-seat[data-piglet-left="true"]::before {
+    content: "♦A";
+    position: absolute;
+    top: -0.5rem;
+    right: -0.45rem;
+    font-size: 0.5rem;
+    line-height: 1;
+    color: #0b0b0b;
+    background: #ffe24a;
+    border: 1px solid #0b0b0b;
+    border-radius: 999px;
+    padding: 0.08rem 0.2rem;
+  }
+  .classic-seat[data-turn="true"] {
+    background: #ffe24a;
+    box-shadow: 0 0 0 2px #0b0b0b;
+  }
+  .classic-seat--n {
+    top: 0.3rem;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .classic-seat--s {
+    bottom: 0.3rem;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .classic-seat--w {
+    left: 0.3rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .classic-seat--e {
+    right: 0.3rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .classic-trick {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 50%;
+    height: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .classic-pile {
+    position: absolute;
+    width: clamp(2.5rem, 10vw, 4rem);
+    height: clamp(3.5rem, 14vw, 5.6rem);
+    border: 1px solid #0b0b0b;
+    background: #fbf7ee;
+    border-radius: 0.3rem;
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .classic-pile--active {
+    opacity: 1;
+  }
+  .classic-pile--n {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .classic-pile--s {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .classic-pile--w {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .classic-pile--e {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .classic-score-area {
+    grid-area: score;
+  }
+  .classic-log-area {
+    grid-area: log;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .classic-panel {
+    border: 2px solid #0b0b0b;
+    background: #fff;
+    padding: 0.4rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  :global(.classic-panel__h) {
+    margin: 0 0 0.55rem;
+    font-size: 0.85rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  :global(.mb-4) {
+    margin-bottom: 1rem;
+  }
+  :global(.opacity-70) {
+    opacity: 0.7;
+  }
+  .classic-score-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+  }
+  .classic-score-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 0.65rem;
+    font-weight: 800;
+    border: 1px solid #ddd;
+    padding: 0.2rem;
+    background: #fff;
+  }
+
+  .classic-hand-area {
+    grid-area: hand;
+    padding-bottom: 0.2rem;
+    max-width: 100%;
+  }
+  .classic-handwrap {
+    border: 2px solid #0b0b0b;
+    background: #fff;
+    padding: 0.5rem;
+  }
+  .classic-hand {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* Dynamic elements (JS-created) - scoped via nesting */
+  .classic-mode :global(.classic-card) {
+    width: clamp(2.2rem, 13vw, 3.8rem);
+    aspect-ratio: 5 / 7;
+    border: 1px solid #0b0b0b;
+    background: #fbf7ee;
+    border-radius: 0.3rem;
+    cursor: pointer;
+    position: relative;
+    padding: 0;
+    flex-shrink: 0;
+    touch-action: manipulation;
+  }
+  .classic-mode :global(.classic-card:disabled) {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .classic-mode :global(.classic-card--legal:hover) {
+    transform: translateY(-3px);
+    border-color: #000;
+  }
+  .classic-mode :global(.classic-card--selected) {
+    border-color: #fff200;
+    box-shadow: 0 0 0 3px #fff200;
+    transform: translateY(-10px);
+  }
+
+  /* Red suits */
+  .classic-mode :global([data-suit="hearts"]),
+  .classic-mode :global([data-suit="diamonds"]) {
+    color: #d00 !important;
+  }
+  .classic-mode :global(.classic-card--legal[data-suit="hearts"]),
+  .classic-mode :global(.classic-card--legal[data-suit="diamonds"]) {
+    border-color: #d00 !important;
+  }
+
+  .classic-mode :global(.classic-card__visual) {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .classic-mode :global(.classic-card__main-label) {
+    font-size: 1.1rem;
+    font-weight: 900;
+    letter-spacing: -0.05em;
+  }
+  .classic-mode :global(.classic-card__corner),
+  .classic-mode :global(.classic-card__pip) {
+    display: none;
+  } /* Hidden on mobile */
+
+  .classic-log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-family: monospace;
+    font-size: 0.65rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    height: 8rem;
+  }
+  .classic-log li {
+    border-bottom: 1px solid #eee;
+  }
+
+  .classic-fx-badge {
+    position: fixed;
+    left: 50%;
+    bottom: 5rem;
+    transform: translateX(-50%) translateY(2rem);
+    background: #ffe24a;
+    border: 2px solid #0b0b0b;
+    padding: 0.5rem 1rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s;
+  }
+  .classic-fx-badge--on {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .classic-finish {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background: rgba(11, 11, 11, 0.72);
+    z-index: 10000;
+  }
+
+  .classic-finish--hidden {
+    display: none;
+  }
+
+  .classic-finish__card {
+    width: min(95vw, 26rem);
+    border: 4px solid #0b0b0b;
+    background: #fff;
+    padding: 1.5rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    display: grid;
+    gap: 0.75rem;
+    text-align: center;
+  }
+
+  .classic-finish__kicker {
+    margin: 0;
+    font-weight: 900;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  .classic-finish__title {
+    margin: 0;
+    font-weight: 1000;
+    font-size: 1.6rem;
+    letter-spacing: 0.1em;
+  }
+
+  .classic-finish__detail {
+    margin: 0;
+    font-weight: 800;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  .classic-finish__actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.25rem;
+  }
+
+  :global(.classic-solo-query) {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(95vw, 26rem);
+    z-index: 10000;
+    background: #fff;
+    border: 4px solid #0b0b0b;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    font-family: "Space Grotesk Variable", system-ui, sans-serif;
+  }
+  :global(.classic-solo-grid) {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.6rem;
+    width: 100%;
+  }
+
+  .classic-pile--capturing {
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  @media (min-width: 48rem) {
+    .classic-shell {
+      max-width: 68rem;
+      grid-template-columns: 1fr 200px;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas:
+        "top top"
+        "table score"
+        "hand log";
+    }
+    .classic-table {
+      aspect-ratio: 16 / 9;
+      max-height: 50svh;
+    }
+    .classic-mode :global(.classic-card) {
+      width: 4.5rem;
+    }
+    .classic-mode :global(.classic-card__main-label) {
+      display: none;
+    }
+    .classic-mode :global(.classic-card__corner),
+    .classic-mode :global(.classic-card__pip) {
+      display: block;
+      position: absolute;
+      line-height: 1;
+    }
+    .classic-mode :global(.classic-card__corner) {
+      font-size: 0.8rem;
+      font-weight: 900;
+      top: 0.3rem;
+      left: 0.3rem;
+    }
+    .classic-mode :global(.classic-card__corner--br) {
+      top: auto;
+      left: auto;
+      bottom: 0.3rem;
+      right: 0.3rem;
+      transform: rotate(180deg);
+    }
+    .classic-mode :global(.classic-card__pip) {
+      font-size: 2.2rem;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .classic-log {
+      height: 100%;
+      max-height: 12rem;
+    }
+    .classic-score-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

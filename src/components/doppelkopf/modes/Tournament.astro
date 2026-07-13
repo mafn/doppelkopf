@@ -1,0 +1,999 @@
+---
+
+---
+
+<section
+  class="tournament-mode"
+  aria-labelledby="tournament-title"
+  data-dkhub-mode="tournament"
+>
+  <header class="doko__header">
+    <h1 id="tournament-title" class="doko__title">TABLE 16</h1>
+  </header>
+
+  <p class="doko__status js-status" aria-live="polite">Loading...</p>
+  <p class="js-sr-trick sr-only" aria-live="polite"></p>
+
+  <div class="dk" role="region" aria-label="Match display">
+    <div class="dk__bar" aria-label="Match controls">
+      <p class="dk__bar-left">
+        <span class="dk__tag">BRACKET</span>
+        <span class="dk__mono js-match-line">MATCH ----</span>
+      </p>
+      <p class="dk__bar-mid dk__mono js-turn-line">SEAT 01</p>
+      <button type="button" class="dk__btn js-return-hub">HUB</button>
+      <button type="button" class="dk__btn js-new-hand">NEW HAND</button>
+    </div>
+
+    <div class="dk__announce js-announce" aria-label="Announcements">
+      <p class="dk__announce-made dk__mono js-announce-made"></p>
+      <div class="dk__announce-actions js-announce-actions"></div>
+    </div>
+
+    <div class="dk__grid" aria-label="Tournament table">
+      <section class="dk__table js-table" aria-label="Table">
+        <div class="seat seat--n js-seat-n">SEAT 02</div>
+        <div class="seat seat--w js-seat-w">SEAT 03</div>
+        <div class="seat seat--e js-seat-e">SEAT 04</div>
+        <div class="seat seat--s js-seat-s">SEAT 01</div>
+
+        <div class="center" aria-label="Current trick">
+          <div class="slot slot--n js-trick-1">--</div>
+          <div class="slot slot--w js-trick-2">--</div>
+          <div class="slot slot--e js-trick-3">--</div>
+          <div class="slot slot--s js-trick-0">--</div>
+        </div>
+      </section>
+
+      <section
+        class="dk__panel dk__panel--score"
+        aria-labelledby="team-heading"
+      >
+        <h2 id="team-heading" class="dk__panel-title">SCORE</h2>
+        <p class="dk__mono js-team-line">RE 0 // KONTRA 0</p>
+      </section>
+
+      <section
+        class="dk__panel dk__panel--log"
+        aria-labelledby="events-heading"
+      >
+        <h2 id="events-heading" class="dk__panel-title">EVENTS</h2>
+        <ul class="event-log js-event-log" aria-live="polite"></ul>
+      </section>
+
+      <section class="dk__panel dk__panel--hand" aria-labelledby="hand-heading">
+        <h2 id="hand-heading" class="dk__panel-title">HAND</h2>
+        <ul class="hand js-hand-list" aria-label="Your cards"></ul>
+      </section>
+    </div>
+  </div>
+
+  <div class="fx-badge js-fx-badge" aria-hidden="true"></div>
+
+  <noscript>
+    <p class="doko__noscript">JavaScript is required to play this game.</p>
+  </noscript>
+</section>
+
+<script>
+  import { cardLabel, cardPoints } from "../../../lib/doppelkopf/deck";
+  import { pickBotCardAsync } from "../../../lib/doppelkopf/bot";
+  import {
+    computePublicScore,
+    createEngine,
+    legalAnnouncements,
+    legalMoves,
+    reduce,
+  } from "../../../lib/doppelkopf/engine";
+  import { isTrump } from "../../../lib/doppelkopf/rules";
+  import { rulesetStandard } from "../../../lib/doppelkopf/ruleset";
+  import type {
+    AnnouncementDeclaration,
+    Card,
+    EngineEvent,
+    EngineStep,
+    GameAction,
+    Seat,
+    SpecialCallout,
+    Team,
+    TrickPlay,
+  } from "../../../lib/doppelkopf/types";
+
+  function init() {
+    const roots = document.querySelectorAll(".tournament-mode");
+    roots.forEach((root) => {
+      if ((root as any)._js_initialized) return;
+      (root as any)._js_initialized = true;
+
+      const getEl = <T extends HTMLElement>(sel: string): T => {
+        const el = root.querySelector(sel);
+        if (!el) throw new Error(`Missing element ${sel}`);
+        return el as T;
+      };
+
+      const statusLine = getEl<HTMLParagraphElement>(".js-status");
+      const srTrickLine = getEl<HTMLParagraphElement>(".js-sr-trick");
+      const turnLine = getEl<HTMLParagraphElement>(".js-turn-line");
+      const teamLine = getEl<HTMLParagraphElement>(".js-team-line");
+      const eventLog = getEl<HTMLUListElement>(".js-event-log");
+      const handList = getEl<HTMLUListElement>(".js-hand-list");
+      const newHandBtn = getEl<HTMLButtonElement>(".js-new-hand");
+      const returnHubBtn = getEl<HTMLButtonElement>(".js-return-hub");
+      const fxBadge = getEl<HTMLDivElement>(".js-fx-badge");
+      const matchLine = getEl<HTMLSpanElement>(".js-match-line");
+      const announceRow = getEl<HTMLDivElement>(".js-announce");
+      const announceMade = getEl<HTMLParagraphElement>(".js-announce-made");
+      const announceActions = getEl<HTMLDivElement>(".js-announce-actions");
+      const seatN = getEl<HTMLDivElement>(".js-seat-n");
+      const seatW = getEl<HTMLDivElement>(".js-seat-w");
+      const seatE = getEl<HTMLDivElement>(".js-seat-e");
+      const seatS = getEl<HTMLDivElement>(".js-seat-s");
+      const trickCard0 = getEl<HTMLDivElement>(".js-trick-0");
+      const trickCard1 = getEl<HTMLDivElement>(".js-trick-1");
+      const trickCard2 = getEl<HTMLDivElement>(".js-trick-2");
+      const trickCard3 = getEl<HTMLDivElement>(".js-trick-3");
+
+      const RULESET = rulesetStandard();
+
+      function applyHubSettings() {
+        const raw = localStorage.getItem("dkhub_prefs");
+        const prefs = raw
+          ? (() => {
+              try {
+                return JSON.parse(raw);
+              } catch (e) {
+                return null;
+              }
+            })()
+          : null;
+
+        if (prefs && typeof prefs === "object") {
+          if (prefs.dulleRule) RULESET.dulleBeatsDulle = prefs.dulleRule;
+        }
+
+        const schweineRaw = prefs?.schweineRule;
+        const schweineRule =
+          schweineRaw === "everywhere" ||
+          schweineRaw === "no_solo" ||
+          schweineRaw === "off"
+            ? schweineRaw
+            : schweineRaw === "announce_while_playing"
+              ? "no_solo"
+              : schweineRaw === "disabled"
+                ? "off"
+                : "off";
+
+        if (schweineRule === "off") {
+          RULESET.schweine = { mode: "disabled" };
+          RULESET.schweineInSolo = false;
+          return;
+        }
+
+        RULESET.schweine = { mode: "announce_while_playing", announce: "auto" };
+        RULESET.schweineInSolo = schweineRule === "everywhere";
+      }
+
+      window.addEventListener("dkhub-settings-changed", applyHubSettings);
+      applyHubSettings();
+
+      let game: EngineStep = createEngine(undefined, RULESET);
+      let botTimer: number | null = null;
+      let fxTimer: number | null = null;
+      let captureTimers: number[] = [];
+      let lastFocusedCardId: string | null = null;
+      let rovingIndex = 0;
+      let isActionLocked = false;
+      let isTrickPaused = false;
+      const hubWrapper = root.closest(".game-mode-wrapper");
+      const inHub = !!hubWrapper && !!document.getElementById("game-container");
+      let isActive =
+        !inHub || !hubWrapper?.classList.contains("dkhub__mode--hidden");
+
+      function stopGame(): void {
+        isActive = false;
+        if (botTimer) window.clearTimeout(botTimer);
+        if (fxTimer) window.clearTimeout(fxTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        isTrickPaused = false;
+        isActionLocked = false;
+      }
+
+      function onHubEnter(ev: Event): void {
+        if (!inHub) return;
+        const mode = (ev as CustomEvent).detail?.mode;
+        if (mode !== root.getAttribute("data-dkhub-mode")) return;
+        isActive = true;
+        startHand();
+      }
+
+      function onHubExit(): void {
+        if (!inHub) return;
+        stopGame();
+      }
+
+      function fastForwardMeta(): void {
+        while (game.state.phase === "solo_selection") {
+          const seat = game.state.soloSelection.currentSeat;
+          game = reduce(game.state, { type: "PassSolo", seat }, RULESET);
+          handleEvents(game.events);
+        }
+      }
+
+      function seedLabel(seed: number): string {
+        const base36 = (seed >>> 0).toString(36).toUpperCase().padStart(7, "0");
+        return `MATCH ${base36}`;
+      }
+
+      function shortSuit(suit: Card["suit"]): string {
+        switch (suit) {
+          case "clubs":
+            return "C";
+          case "spades":
+            return "S";
+          case "hearts":
+            return "H";
+          case "diamonds":
+            return "D";
+          default:
+            return "?";
+        }
+      }
+
+      function cardFace(card: Card): string {
+        return `${card.rank}${shortSuit(card.suit)}`;
+      }
+
+      function addLog(text: string): void {
+        const li = document.createElement("li");
+        li.textContent = text;
+        eventLog.append(li);
+        const lines = Array.from(eventLog.querySelectorAll("li"));
+        while (lines.length > 8) lines.shift()?.remove();
+      }
+
+      function localizeDokoText(text: string): string {
+        return text
+          .replaceAll("SCHWEINE", "PIGLETS")
+          .replaceAll("Schweine", "Piglets")
+          .replaceAll("Fuchs gefangen", "Fox caught")
+          .replaceAll("Fuchs", "Fox")
+          .replaceAll("Karlchen!", "Last Jack!")
+          .replaceAll("Renonce", "Renege")
+          .replaceAll("Fleischlos", "No Trumps");
+      }
+
+      function showFx(text: string, kind: SpecialCallout["kind"]): void {
+        fxBadge.textContent = text;
+        fxBadge.className = `fx-badge js-fx-badge fx-badge--on fx-${kind}`;
+        if (fxTimer) window.clearTimeout(fxTimer);
+        const holdMs = window.matchMedia("(prefers-reduced-motion: reduce)")
+          .matches
+          ? 900
+          : 1500;
+        fxTimer = window.setTimeout(() => {
+          fxBadge.className = "fx-badge js-fx-badge";
+        }, holdMs);
+      }
+
+      function showFxText(text: string): void {
+        fxBadge.textContent = text;
+        fxBadge.className = "fx-badge js-fx-badge fx-badge--on";
+        if (fxTimer) window.clearTimeout(fxTimer);
+        const holdMs = window.matchMedia("(prefers-reduced-motion: reduce)")
+          .matches
+          ? 900
+          : 1500;
+        fxTimer = window.setTimeout(() => {
+          fxBadge.className = "fx-badge js-fx-badge";
+        }, holdMs);
+      }
+
+      function announcementButtonLabel(d: AnnouncementDeclaration): string {
+        if (d === "Kontra") return "KONTRA";
+        if (d === "Re") return "RE";
+        if (d === "Schwarz") return "BLACK";
+        if (d === "No90") return "NO 90";
+        if (d === "No60") return "NO 60";
+        if (d === "No30") return "NO 30";
+        return "";
+      }
+
+      function renderAnnouncements(): void {
+        const byTeam = (team: Team) =>
+          game.state.announcements
+            .filter((a) => a.team === team)
+            .sort((a, b) => a.trickIndex - b.trickIndex)
+            .map((a) => a.declaration);
+
+        const reDecls = byTeam("re");
+        const kontraDecls = byTeam("kontra");
+        const parts: string[] = [];
+        if (reDecls.length)
+          parts.push(`RE: ${reDecls.map(announcementButtonLabel).join(" · ")}`);
+        if (kontraDecls.length)
+          parts.push(
+            `KONTRA: ${kontraDecls.map(announcementButtonLabel).join(" · ")}`,
+          );
+        announceMade.textContent = parts.join("  //  ");
+
+        announceActions.innerHTML = "";
+        const legal = legalAnnouncements(game.state, 0, RULESET);
+        for (const d of legal) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "dk__btn dk__btn--announce";
+          btn.textContent = announcementButtonLabel(d);
+          btn.addEventListener("click", () => {
+            step({ type: "Announce", seat: 0, declaration: d });
+          });
+          announceActions.append(btn);
+        }
+
+        const hasRow =
+          Boolean(announceMade.textContent) ||
+          announceActions.childElementCount > 0;
+        announceRow.style.display = hasRow ? "grid" : "none";
+      }
+
+      function renderTrick(overridePlays?: TrickPlay[]): void {
+        const plays = overridePlays || game.state.trick;
+        const get = (seat: Seat) =>
+          plays.find((p) => p.seat === seat)?.card ?? null;
+        [trickCard0, trickCard1, trickCard2, trickCard3].forEach((el, i) => {
+          const card = get(i as Seat);
+          el.textContent = card ? cardFace(card) : "--";
+          el.style.transform = "";
+          el.style.opacity = "";
+          el.setAttribute(
+            "aria-label",
+            card
+              ? `Seat 0${i + 1} played ${cardLabel(card)}`
+              : `Seat 0${i + 1} waiting`,
+          );
+        });
+      }
+
+      function renderHand(): void {
+        handList.innerHTML = "";
+        const myHand = [...game.state.hands[0]].sort((a, b) => {
+          const aT = isTrump(a, game.state.gameMode);
+          const bT = isTrump(b, game.state.gameMode);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          return (
+            a.suit.localeCompare(b.suit) ||
+            cardPoints(b.rank) - cardPoints(a.rank)
+          );
+        });
+        const legal = new Set(legalMoves(game.state, 0));
+        const myTurn = !game.state.finished && game.state.currentSeat === 0;
+
+        myHand.forEach((card, index) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          const isLegal = legal.has(card.id);
+          btn.type = "button";
+          btn.className = `card-btn${isLegal ? " is-legal" : " is-illegal"}`;
+          btn.dataset.cardId = card.id;
+          btn.setAttribute(
+            "aria-label",
+            `${cardLabel(card)}, ${isTrump(card, game.state.gameMode) ? "trump" : "non-trump"}${isLegal ? "" : ", illegal"}`,
+          );
+          btn.disabled = !myTurn || !isLegal;
+          btn.tabIndex = myTurn && index === rovingIndex ? 0 : -1;
+
+          const code = document.createElement("span");
+          code.className = "card-btn__code";
+          code.textContent = cardFace(card);
+          btn.append(code);
+
+          const meta = document.createElement("span");
+          meta.className = "card-btn__meta";
+          meta.textContent = isTrump(card, game.state.gameMode)
+            ? "TRUMP"
+            : "SUIT";
+          btn.append(meta);
+
+          btn.addEventListener("click", () => {
+            if (
+              isActionLocked ||
+              game.state.currentSeat !== 0 ||
+              game.state.finished
+            )
+              return;
+            isActionLocked = true;
+            lastFocusedCardId = card.id;
+            step({ type: "PlayCard", seat: 0, cardId: card.id });
+          });
+          li.append(btn);
+          handList.append(li);
+        });
+      }
+
+      function focusRovingButton(nextIndex: number): void {
+        const buttons = Array.from(handList.querySelectorAll("button"));
+        if (buttons.length === 0) return;
+        rovingIndex = Math.max(0, Math.min(nextIndex, buttons.length - 1));
+        for (let i = 0; i < buttons.length; i += 1)
+          buttons[i].tabIndex = i === rovingIndex ? 0 : -1;
+        buttons[rovingIndex].focus();
+      }
+
+      function installHandKeyboardNavigation(): void {
+        handList.addEventListener("keydown", (event) => {
+          const buttons = Array.from(handList.querySelectorAll("button"));
+          if (buttons.length === 0) return;
+          const active = document.activeElement;
+          const index = buttons.findIndex((button) => button === active);
+          const current = index >= 0 ? index : rovingIndex;
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            focusRovingButton(Math.min(current + 1, buttons.length - 1));
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            focusRovingButton(Math.max(current - 1, 0));
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            focusRovingButton(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            focusRovingButton(buttons.length - 1);
+          } else if (
+            (event.key === "Enter" || event.key === " ") &&
+            active instanceof HTMLButtonElement
+          ) {
+            event.preventDefault();
+            active.click();
+          }
+        });
+      }
+
+      function renderMeta(): void {
+        const scores = computePublicScore(game.state);
+        teamLine.textContent = `RE ${scores.re.cardPoints} // KONTRA ${scores.kontra.cardPoints}`;
+        seatS.textContent = `SEAT 01 // ${game.state.hands[0].length}`;
+        seatN.textContent = `SEAT 02 // ${game.state.hands[1].length}`;
+        seatW.textContent = `SEAT 03 // ${game.state.hands[2].length}`;
+        seatE.textContent = `SEAT 04 // ${game.state.hands[3].length}`;
+        turnLine.textContent = game.state.finished
+          ? "LOCKED"
+          : `SEAT 0${game.state.currentSeat + 1}`;
+        if (!game.state.finished && game.state.currentSeat === 0)
+          statusLine.textContent = "YOUR MOVE.";
+        else if (!game.state.finished) statusLine.textContent = "PROCESSING...";
+
+        renderAnnouncements();
+      }
+
+      function handleEvents(events: EngineEvent[]): void {
+        for (const event of events) {
+          if (event.type === "CardPlayed") {
+            const who = `SEAT 0${event.seat + 1}`;
+            const card = findCard(event.cardId);
+            if (card)
+              addLog(`${who} > ${cardFace(card)}${event.wasLegal ? "" : " !"}`);
+            if (!events.some((e) => e.type === "TrickWon")) renderTrick();
+          }
+          if (event.type === "TrickWon") {
+            addLog(
+              `TRICK ${event.trickIndex} > SEAT 0${event.winner + 1} (${event.points})`,
+            );
+            srTrickLine.textContent = `Trick ${event.trickIndex} won by seat ${event.winner + 1} for ${event.points} points.`;
+            const lastTrick = game.state.completedTricks.find(
+              (t) => t.index === event.trickIndex,
+            );
+            if (lastTrick) renderTrick(lastTrick.plays);
+            animateCapture(event.winner);
+          }
+          if (event.type === "SpecialCallout") {
+            const text = localizeDokoText(event.callout.text);
+            addLog(text);
+            showFx(text, event.callout.kind);
+          }
+          if (event.type === "AnnouncementMade") {
+            const who = `SEAT 0${event.seat + 1}`;
+            const label = announcementButtonLabel(event.declaration);
+            addLog(`${who} > ${label}`);
+            showFxText(label);
+          }
+          if (event.type === "HandFinished")
+            statusLine.textContent = "HAND OVER.";
+        }
+      }
+
+      function animateCapture(winner: Seat): void {
+        isTrickPaused = true;
+        const winnerEl = [seatS, seatN, seatW, seatE][winner]; // Seat order in Tournament is different: 0:S, 1:N, 2:W, 3:E
+
+        const t1 = window.setTimeout(() => {
+          const activeSlots = root.querySelectorAll(".js-table .center > div");
+          // Actually, in tournament they are always visible but we can fade them
+          activeSlots.forEach((s) => {
+            (s as HTMLElement).style.transition =
+              "transform 0.4s, opacity 0.4s";
+            const winnerRect = winnerEl.getBoundingClientRect();
+            const slotRect = s.getBoundingClientRect();
+            const dx = winnerRect.left - slotRect.left;
+            const dy = winnerRect.top - slotRect.top;
+            (s as HTMLElement).style.transform =
+              `translate(${dx}px, ${dy}px) scale(0.2)`;
+            (s as HTMLElement).style.opacity = "0";
+          });
+          const t2 = window.setTimeout(() => {
+            isTrickPaused = false;
+            renderAll();
+            maybeRunBots();
+          }, 600);
+          captureTimers.push(t2);
+        }, 1500);
+        captureTimers.push(t1);
+      }
+
+      function findCard(cardId: string): Card | null {
+        for (const seat of [0, 1, 2, 3] as Seat[]) {
+          const card = game.state.hands[seat].find(
+            (entry) => entry.id === cardId,
+          );
+          if (card) return card;
+        }
+        for (const play of game.state.trick)
+          if (play.card.id === cardId) return play.card;
+        for (const trick of game.state.completedTricks) {
+          for (const play of trick.plays)
+            if (play.card.id === cardId) return play.card;
+        }
+        return null;
+      }
+
+      function getBotSpeed(): number {
+        const raw = localStorage.getItem("dkhub_prefs");
+        if (raw) {
+          try {
+            const prefs = JSON.parse(raw);
+            return parseInt(prefs.botSpeed, 10) || 800;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        return 800;
+      }
+
+      function maybeRunBots(): void {
+        if (!isActive) return;
+        if (
+          game.state.finished ||
+          game.state.currentSeat === 0 ||
+          isTrickPaused
+        )
+          return;
+        if (botTimer) window.clearTimeout(botTimer);
+        botTimer = window.setTimeout(() => {
+          if (
+            !isActive ||
+            game.state.finished ||
+            game.state.currentSeat === 0 ||
+            isTrickPaused
+          )
+            return;
+          const seat = game.state.currentSeat;
+          const legal = legalMoves(game.state, seat)
+            .map((id) => game.state.hands[seat].find((card) => card.id === id))
+            .filter((card): card is Card => card !== undefined);
+          pickBotCardAsync({
+            seat,
+            phase: game.state.phase,
+            hand: game.state.hands[seat],
+            currentTrick: game.state.trick,
+            completedTricks: game.state.completedTricks,
+            legalCards: legal,
+            trickIndex: game.state.trickIndex,
+            gameMode: game.state.gameMode,
+            announcements: game.state.announcements,
+            specialCallouts: game.state.specialCallouts,
+            schweineActiveSeat: game.state.schweineActiveSeat,
+            ruleset: RULESET,
+          }).then((cardId) => {
+            step({ type: "PlayCard", seat, cardId });
+          });
+        }, getBotSpeed());
+      }
+
+      function step(action: GameAction): void {
+        if (!isActive) return;
+        game = reduce(game.state, action, RULESET);
+        handleEvents(game.events);
+        fastForwardMeta();
+        if (!isTrickPaused) {
+          renderAll();
+          maybeRunBots();
+        }
+      }
+
+      function renderAll(): void {
+        isActionLocked = false;
+        renderTrick();
+        renderMeta();
+        renderHand();
+        if (game.state.currentSeat === 0 && !game.state.finished) {
+          const buttons = Array.from(handList.querySelectorAll("button"));
+          if (buttons.length > 0) {
+            const target = lastFocusedCardId
+              ? buttons.find((btn) => btn.dataset.cardId === lastFocusedCardId)
+              : null;
+            const targetIndex = target ? buttons.indexOf(target) : 0;
+            focusRovingButton(targetIndex);
+          }
+        }
+      }
+
+      function startHand(): void {
+        if (!isActive) return;
+        if (botTimer) window.clearTimeout(botTimer);
+        if (fxTimer) window.clearTimeout(fxTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        isTrickPaused = false;
+        isActionLocked = false;
+
+        game = createEngine(undefined, RULESET);
+        matchLine.textContent = seedLabel(game.state.seed);
+        eventLog.innerHTML = "";
+        handleEvents(game.events);
+        fastForwardMeta();
+        renderAll();
+        maybeRunBots();
+      }
+
+      newHandBtn.addEventListener("click", startHand);
+      returnHubBtn.addEventListener("click", () => {
+        stopGame();
+        const exitBtn = document.getElementById(
+          "exitGame",
+        ) as HTMLButtonElement | null;
+        if (exitBtn) {
+          exitBtn.click();
+        } else {
+          window.location.href = "/doppelkopf/";
+        }
+      });
+
+      window.addEventListener("dkhub-enter", onHubEnter);
+      window.addEventListener("dkhub-exit", onHubExit);
+      installHandKeyboardNavigation();
+      if (isActive) startHand();
+
+      document.addEventListener(
+        "astro:before-swap",
+        () => {
+          stopGame();
+          window.removeEventListener("dkhub-enter", onHubEnter);
+          window.removeEventListener("dkhub-exit", onHubExit);
+          window.removeEventListener(
+            "dkhub-settings-changed",
+            applyHubSettings,
+          );
+        },
+        { once: true },
+      );
+    });
+  }
+
+  document.addEventListener("astro:page-load", init);
+  init();
+</script>
+
+<style>
+  .tournament-mode {
+    min-height: 100svh;
+    padding: 1.25rem;
+    color: #0b0b0b;
+    background: #f5f5f0;
+    font-family: "JetBrains Mono Variable", monospace;
+    position: relative;
+    overscroll-behavior: none;
+  }
+  .doko__header {
+    margin: 0 auto 1rem;
+    max-width: 68rem;
+  }
+  .doko__title {
+    margin: 0;
+    font-size: clamp(1.8rem, 3.2vw, 3.1rem);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .doko__status {
+    margin: 0 auto 1rem;
+    max-width: 68rem;
+    border: 3px solid #0b0b0b;
+    padding: 0.65rem 0.8rem;
+    background: #ffffff;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sr-only {
+    @apply sr-only;
+  }
+
+  .dk {
+    margin: 0 auto;
+    max-width: 68rem;
+  }
+  .dk__bar {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 0.6rem 0.7rem;
+  }
+  .dk__bar-left {
+    margin: 0;
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .dk__tag {
+    display: inline-block;
+    border: 3px solid #0b0b0b;
+    padding: 0.1rem 0.35rem;
+    background: #fff200;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+  }
+  .dk__mono {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .dk__bar-mid {
+    margin: 0;
+    justify-self: center;
+  }
+  .dk__btn {
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 0.35rem 0.55rem;
+    font: inherit;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .dk__btn:hover {
+    background: #fff200;
+  }
+  .dk__btn--announce {
+    background: #fff200;
+  }
+  .dk__announce {
+    margin-top: 0.6rem;
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 0.55rem 0.7rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .dk__announce-made {
+    margin: 0;
+    min-height: 1.2rem;
+  }
+  .dk__announce-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .dk__grid {
+    margin-top: 0.9rem;
+    display: grid;
+    gap: 0.9rem;
+    grid-template-areas: "table" "score" "hand" "log";
+  }
+  .dk__table {
+    grid-area: table;
+    border: 3px solid #0b0b0b;
+    background:
+      repeating-linear-gradient(0deg, #0000 0, #0000 29px, #0b0b0b 30px),
+      repeating-linear-gradient(90deg, #0000 0, #0000 29px, #0b0b0b 30px),
+      #ffffff;
+    position: relative;
+    height: clamp(18rem, 45vw, 26rem);
+    overflow: hidden;
+  }
+  .seat {
+    position: absolute;
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 0.3rem 0.45rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .seat--n {
+    top: 0.65rem;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .seat--s {
+    bottom: 0.65rem;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .seat--w {
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .seat--e {
+    right: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: min(20rem, 70%);
+    height: min(20rem, 70%);
+    transform: translate(-50%, -50%);
+  }
+  .slot {
+    position: absolute;
+    width: 5.8rem;
+    height: 4.2rem;
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .slot--n {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .slot--s {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .slot--w {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .slot--e {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .dk__panel {
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 0.7rem;
+  }
+  .dk__panel--score {
+    grid-area: score;
+  }
+  .dk__panel--log {
+    grid-area: log;
+  }
+  .dk__panel--hand {
+    grid-area: hand;
+  }
+  .dk__panel-title {
+    margin: 0 0 0.55rem;
+    font-size: 0.95rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .event-log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+    font-size: 0.92rem;
+  }
+  .hand {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0;
+  }
+  .card-btn {
+    width: 100%;
+    border-radius: 0;
+    border: 3px solid #0b0b0b;
+    padding: 0.75rem 0.6rem;
+    text-align: center;
+    background: #fff;
+    color: #0b0b0b;
+    font: inherit;
+    cursor: pointer;
+    font-weight: 900;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    display: grid;
+    gap: 0.25rem;
+    align-content: center;
+    touch-action: manipulation;
+  }
+  .card-btn__code {
+    display: block;
+    font-size: 1.25rem;
+    letter-spacing: 0.12em;
+  }
+  .card-btn__meta {
+    display: block;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    opacity: 0.7;
+  }
+  .card-btn.is-legal {
+    background: #ffffff;
+  }
+  .card-btn.is-illegal {
+    background: #f2f2f2;
+    border-style: dashed;
+  }
+  .card-btn:disabled {
+    opacity: 0.62;
+    cursor: default;
+  }
+  .fx-badge {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    max-width: min(30rem, calc(100vw - 2rem));
+    padding: 0.65rem 0.8rem;
+    border: 3px solid #0b0b0b;
+    color: #0b0b0b;
+    background: #fff200;
+    transform: translateY(1rem);
+    opacity: 0;
+    pointer-events: none;
+    font-weight: 900;
+    text-transform: uppercase;
+    z-index: 100;
+  }
+  .fx-badge--on {
+    animation: callout-pop 1.45s ease-out;
+  }
+  @keyframes callout-pop {
+    0% {
+      opacity: 0;
+      transform: translateY(0.95rem) scale(0.96);
+    }
+    20% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    82% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-0.35rem) scale(1.02);
+    }
+  }
+  @media (min-width: 62rem) {
+    .dk__grid {
+      grid-template-columns: 1.2fr 0.8fr;
+      grid-template-areas: "table score" "table log" "hand log";
+      align-items: start;
+    }
+  }
+</style>

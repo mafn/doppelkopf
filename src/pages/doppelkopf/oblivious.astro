@@ -1,0 +1,16 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ObliviousMode from "../../components/doppelkopf/modes/Oblivious.astro";
+
+const canonicalURL = new URL("/doppelkopf/oblivious/", Astro.site);
+---
+
+<BaseLayout
+  title="Doppelkopf — Oblivious"
+  description="Minimal, high-contrast Doppelkopf against three bots."
+  renderH1={false}
+  shellMode="immersive"
+  canonicalURL={canonicalURL}
+>
+  <ObliviousMode showLinks={false} />
+</BaseLayout>

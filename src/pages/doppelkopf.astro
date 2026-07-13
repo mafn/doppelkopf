@@ -1,0 +1,500 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Tournament from "../components/doppelkopf/modes/Tournament.astro";
+import Classic from "../components/doppelkopf/modes/Classic.astro";
+import Oblivious from "../components/doppelkopf/modes/Oblivious.astro";
+import SiteLinks from "../components/SiteLinks.astro";
+
+const seoTitle = "Täglich Doko — Doppelkopf in Your Browser";
+const seoDescription =
+  "Play configurable Doppelkopf against bots in Classic, Tournament, or Oblivious modes.";
+const canonicalURL = new URL("/doppelkopf/", Astro.site);
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": ["VideoGame", "SoftwareApplication"],
+  name: "Täglich Doko",
+  description: seoDescription,
+  applicationCategory: "GameApplication",
+  operatingSystem: "Web Browser",
+  genre: "Card Game",
+  playMode: "SinglePlayer",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "EUR",
+  },
+};
+---
+
+<BaseLayout
+  title={seoTitle}
+  description={seoDescription}
+  renderH1={false}
+  shellMode="immersive"
+  canonicalURL={canonicalURL}
+>
+  <script
+    is:inline
+    type="application/ld+json"
+    set:html={JSON.stringify(structuredData)}
+    slot="head"
+  />
+
+  <section class="dkhub" aria-labelledby="dkhub-title">
+    <div id="intro" class="dkhub__intro">
+      <header class="dkhub__header">
+        <h1 id="dkhub-title" class="dkhub__title">TÄGLICH DOKO</h1>
+        <p class="dkhub__tagline">Doppelkopf on taegli.ch.</p>
+      </header>
+
+      <div class="dkhub__main">
+        <div class="dkhub__disclaimer">
+          <p>
+            <strong>One game, three views:</strong> each mode changes the table UI
+            and may apply a settings preset. They share the same engine and rules.
+          </p>
+        </div>
+
+        <div class="dkhub__grid" role="region" aria-label="Select Mode">
+          <article class="dkhub__card">
+            <h2 class="dkhub__h">OBLIVIOUS</h2>
+            <p class="dkhub__p">
+              Minimal, high-contrast presentation with an oblivious preset.
+            </p>
+            <button
+              type="button"
+              class="dkhub__btn mode-select"
+              data-mode="oblivious">ENTER</button
+            >
+          </article>
+
+          <article class="dkhub__card">
+            <h2 class="dkhub__h">CLASSIC</h2>
+            <p class="dkhub__p">
+              Standard table presentation, suit symbols, and lead hints.
+            </p>
+            <button
+              type="button"
+              class="dkhub__btn mode-select"
+              data-mode="classic">PLAY</button
+            >
+          </article>
+
+          <article class="dkhub__card">
+            <h2 class="dkhub__h">TOURNAMENT</h2>
+            <p class="dkhub__p">
+              Brutalist tournament presentation and preset.
+            </p>
+            <button
+              type="button"
+              class="dkhub__btn mode-select"
+              data-mode="tournament">START</button
+            >
+          </article>
+        </div>
+
+        <div class="dkhub__footer-actions">
+          <button
+            id="openSettings"
+            type="button"
+            class="dkhub__btn dkhub__btn--alt">HOUSE RULES & SETTINGS</button
+          >
+        </div>
+
+        <footer class="dkhub__legal">
+          <SiteLinks
+            linkClass="dkhub__legal-link"
+            separatorClass="dkhub__legal-sep"
+          />
+        </footer>
+      </div>
+    </div>
+
+    <dialog id="settingsDialog" class="dkhub__dialog">
+      <form method="dialog" class="dkhub__form">
+        <h2 class="dkhub__h">SETTINGS</h2>
+
+        <div class="dkhub__settings-grid">
+          <div class="field">
+            <label for="botSpeed">BOT SPEED</label>
+            <select id="botSpeed" class="dkhub__select">
+              <option value="400">FAST (400ms)</option>
+              <option value="800" selected>NORMAL (800ms)</option>
+              <option value="1500">RELAXED (1.5s)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="dulleRule">2ND DULLE (♥10)</label>
+            <select id="dulleRule" class="dkhub__select">
+              <option value="except_last_trick" selected
+                >BEATS 1ST (Exc. Last)</option
+              >
+              <option value="always">ALWAYS BEATS 1ST</option>
+              <option value="disabled">DISABLED (1st wins)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="schweineRule">SCHWEINE (♦A)</label>
+            <select id="schweineRule" class="dkhub__select">
+              <option value="off">DISABLED</option>
+              <option value="no_solo">ENABLED (NO SOLI)</option>
+              <option value="everywhere">ENABLED (ALL GAMES)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="botType">BOT ENGINE</label>
+            <select id="botType" class="dkhub__select">
+              <option value="heuristic-v1">HEURISTIC V1 (Standard)</option>
+              <option value="heuristic-v2" selected
+                >HEURISTIC V2 (Strategic)</option
+              >
+            </select>
+          </div>
+        </div>
+
+        <div class="dkhub__form-footer">
+          <button type="submit" class="dkhub__btn">CLOSE & SAVE</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="game-container" class="dkhub__game dkhub__mode--hidden">
+      <div id="mode-oblivious" class="game-mode-wrapper dkhub__mode--hidden">
+        <Oblivious showLinks={false} />
+      </div>
+      <div id="mode-classic" class="game-mode-wrapper dkhub__mode--hidden">
+        <Classic rulesetKind="standard" showLinks={false} />
+      </div>
+      <div id="mode-tournament" class="game-mode-wrapper dkhub__mode--hidden">
+        <Tournament />
+      </div>
+
+      <button id="exitGame" type="button" class="dkhub__exit-btn"
+        >EXIT TO HUB</button
+      >
+    </div>
+
+    <noscript>
+      <p class="dkhub__noscript">JavaScript is required to play.</p>
+    </noscript>
+  </section>
+</BaseLayout>
+
+<style>
+  .dkhub {
+    min-height: 100svh;
+    background: #f5f5f0;
+    color: #0b0b0b;
+    font-family: "JetBrains Mono Variable", monospace;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dkhub__intro {
+    padding: 2rem 1.25rem;
+    max-width: 68rem;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .dkhub__header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+  .dkhub__title {
+    font-weight: 950;
+    letter-spacing: -0.02em;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    margin: 0;
+    line-height: 0.9;
+  }
+  .dkhub__tagline {
+    font-weight: 700;
+    opacity: 0.6;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 0.5rem;
+  }
+  .dkhub__disclaimer {
+    border-left: 4px solid #0b0b0b;
+    padding: 1rem 1.5rem;
+    background: #fff;
+    margin-bottom: 2rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .dkhub__grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    margin-bottom: 3rem;
+  }
+  .dkhub__card {
+    border: 3px solid #0b0b0b;
+    background: #fff;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 8px 8px 0 #0b0b0b;
+    transition: transform 0.1s;
+  }
+  .dkhub__card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 10px 10px 0 #0b0b0b;
+  }
+  .dkhub__h {
+    margin: 0 0 0.75rem;
+    font-size: 1.25rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .dkhub__p {
+    margin: 0 0 1.5rem;
+    font-size: 0.95rem;
+    flex: 1;
+    opacity: 0.8;
+  }
+
+  .dkhub__btn {
+    border: 3px solid #0b0b0b;
+    background: #fff200;
+    color: #0b0b0b;
+    padding: 0.75rem;
+    font: inherit;
+    font-weight: 900;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .dkhub__btn:hover {
+    background: #0b0b0b;
+    color: #fff;
+  }
+  .dkhub__btn--alt {
+    background: #fff;
+    border-style: dashed;
+  }
+
+  .dkhub__footer-actions {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 3rem;
+  }
+
+  .dkhub__legal {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    opacity: 0.5;
+  }
+  .dkhub__legal-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+  }
+  .dkhub__legal-sep {
+    opacity: 0.3;
+  }
+
+  .dkhub__dialog {
+    border: 4px solid #0b0b0b;
+    padding: 0;
+    background: #fff;
+    box-shadow: 20px 20px 0 rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 32rem;
+  }
+  .dkhub__dialog::backdrop {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  .dkhub__form {
+    padding: 2rem;
+  }
+  .dkhub__settings-grid {
+    display: grid;
+    gap: 1.25rem;
+    margin: 2rem 0;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .field label {
+    font-size: 0.7rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    color: #666;
+  }
+  .dkhub__select {
+    border: 2px solid #0b0b0b;
+    padding: 0.6rem;
+    font: inherit;
+    font-weight: 700;
+    background: #fafafa;
+  }
+  .dkhub__form-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .dkhub__game {
+    position: relative;
+    width: 100%;
+    flex: 1;
+  }
+  .dkhub__exit-btn {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border: 1px solid #fff;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .dkhub__mode--hidden {
+    display: none !important;
+  }
+</style>
+
+<script>
+  const intro = document.getElementById("intro");
+  const gameContainer = document.getElementById("game-container");
+  const exitBtn = document.getElementById("exitGame");
+  const openSettingsBtn = document.getElementById("openSettings");
+  const settingsDialog = document.getElementById(
+    "settingsDialog",
+  ) as HTMLDialogElement;
+
+  const botSpeedSelect = document.getElementById(
+    "botSpeed",
+  ) as HTMLSelectElement;
+  const dulleRuleSelect = document.getElementById(
+    "dulleRule",
+  ) as HTMLSelectElement;
+  const schweineRuleSelect = document.getElementById(
+    "schweineRule",
+  ) as HTMLSelectElement;
+  const botTypeSelect = document.getElementById("botType") as HTMLSelectElement;
+
+  const STORAGE_KEY = "dkhub_prefs";
+
+  function normalizeSchweineRule(
+    raw: unknown,
+  ): "off" | "no_solo" | "everywhere" {
+    if (raw === "off" || raw === "no_solo" || raw === "everywhere") return raw;
+    if (raw === "announce_while_playing") return "no_solo";
+    if (raw === "disabled") return "off";
+    return "off";
+  }
+
+  function normalizeBotType(raw: unknown): "heuristic-v1" | "heuristic-v2" {
+    return raw === "heuristic-v1" ? "heuristic-v1" : "heuristic-v2";
+  }
+
+  function savePrefs(mode: string | null) {
+    const saved = loadPrefs();
+    const prefs = {
+      mode: mode || saved?.mode || "classic",
+      botSpeed: botSpeedSelect.value,
+      dulleRule: dulleRuleSelect.value,
+      schweineRule: normalizeSchweineRule(schweineRuleSelect.value),
+      botType: botTypeSelect.value,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    window.dispatchEvent(new CustomEvent("dkhub-settings-changed"));
+  }
+
+  function loadPrefs() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  let activeMode: string | null = null;
+
+  function switchMode(mode: string) {
+    if (activeMode) {
+      window.dispatchEvent(
+        new CustomEvent("dkhub-exit", { detail: { mode: activeMode } }),
+      );
+    }
+    activeMode = mode;
+    intro?.classList.add("dkhub__mode--hidden");
+    gameContainer?.classList.remove("dkhub__mode--hidden");
+    document
+      .querySelectorAll(".game-mode-wrapper")
+      .forEach((w) => w.classList.add("dkhub__mode--hidden"));
+    const target = document.getElementById(`mode-${mode}`);
+    if (target) {
+      target.classList.remove("dkhub__mode--hidden");
+      savePrefs(mode);
+    }
+
+    window.dispatchEvent(new CustomEvent("dkhub-enter", { detail: { mode } }));
+  }
+
+  document.querySelectorAll(".mode-select").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const mode = (e.currentTarget as HTMLButtonElement).dataset.mode;
+      if (mode) switchMode(mode);
+    });
+  });
+
+  exitBtn?.addEventListener("click", () => {
+    window.dispatchEvent(
+      new CustomEvent("dkhub-exit", { detail: { mode: activeMode } }),
+    );
+    activeMode = null;
+    gameContainer?.classList.add("dkhub__mode--hidden");
+    intro?.classList.remove("dkhub__mode--hidden");
+    document
+      .querySelectorAll(".game-mode-wrapper")
+      .forEach((w) => w.classList.add("dkhub__mode--hidden"));
+  });
+
+  openSettingsBtn?.addEventListener("click", () => {
+    settingsDialog.showModal();
+  });
+  settingsDialog?.addEventListener("close", () => {
+    savePrefs(null);
+  });
+
+  const saved = loadPrefs();
+  if (saved) {
+    if (saved.botSpeed) botSpeedSelect.value = saved.botSpeed;
+    if (saved.dulleRule) dulleRuleSelect.value = saved.dulleRule;
+    if (saved.schweineRule) {
+      schweineRuleSelect.value = normalizeSchweineRule(saved.schweineRule);
+    }
+    if (saved.botType) {
+      const botType = normalizeBotType(saved.botType);
+      botTypeSelect.value = botType;
+      if (saved.botType !== botType) {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ ...saved, botType }),
+        );
+      }
+    }
+  }
+
+  window.addEventListener("dkhub-request-exit", () => {
+    exitBtn?.click();
+  });
+</script>

@@ -1,0 +1,826 @@
+---
+import SiteLinks from "../../SiteLinks.astro";
+
+interface Props {
+  showLinks?: boolean;
+}
+
+const { showLinks = true } = Astro.props;
+---
+
+<section
+  class="oblivious-mode"
+  aria-label="Game table"
+  data-dkhub-mode="oblivious"
+>
+  <p class="status-minimal js-status" aria-live="polite">...</p>
+  <p class="js-sr-action sr-only" aria-live="polite"></p>
+  <p class="js-sr-trick sr-only" aria-live="polite"></p>
+
+  <div class="shell" role="region" aria-label="Table">
+    <div class="js-table table" aria-label="Current trick">
+      <div class="seat seat--n js-seat-n">S3</div>
+      <div class="seat seat--w js-seat-w">S2</div>
+      <div class="seat seat--e js-seat-e">S4</div>
+      <div class="seat seat--s js-seat-s">YOU</div>
+
+      <div class="trick">
+        <div class="pile pile--n js-trick-2"></div>
+        <div class="pile pile--w js-trick-1"></div>
+        <div class="pile pile--e js-trick-3"></div>
+        <div class="pile pile--s js-trick-0"></div>
+      </div>
+    </div>
+
+    <div class="hand-area">
+      <ul class="hand js-hand-list" aria-label="Hand"></ul>
+    </div>
+
+    <div class="end-overlay end-overlay--hidden js-end-overlay">
+      <h2 class="end-title js-end-title"></h2>
+      <p class="end-detail js-end-detail"></p>
+      <button type="button" class="btn-minimal js-end-restart mt-4"
+        >PLAY AGAIN</button
+      >
+    </div>
+
+    <div class="meta-minimal">
+      <span class="js-match-line">#0000000</span>
+      <button type="button" class="btn-minimal js-return-hub">HUB</button>
+      <button type="button" class="btn-minimal js-new-hand">NEW</button>
+    </div>
+  </div>
+
+  {
+    showLinks && (
+      <nav class="links" aria-label="Site">
+        <SiteLinks linkClass="link" separatorClass="sep" />
+      </nav>
+    )
+  }
+</section>
+
+<script>
+  import { cardLabel, cardPoints } from "../../../lib/doppelkopf/deck";
+  import { pickBotCardAsync } from "../../../lib/doppelkopf/bot";
+  import {
+    createEngine,
+    legalMoves,
+    reduce,
+  } from "../../../lib/doppelkopf/engine";
+  import { isTrump } from "../../../lib/doppelkopf/rules";
+  import { rulesetObliviousDay } from "../../../lib/doppelkopf/ruleset";
+  import type {
+    Card,
+    EngineEvent,
+    EngineStep,
+    GameAction,
+    Seat,
+    TrickPlay,
+  } from "../../../lib/doppelkopf/types";
+
+  function init() {
+    const roots = document.querySelectorAll(".oblivious-mode");
+    roots.forEach((root) => {
+      if ((root as any)._js_initialized) return;
+      (root as any)._js_initialized = true;
+
+      const getEl = <T extends HTMLElement>(sel: string): T => {
+        const el = root.querySelector(sel);
+        if (!el) throw new Error(`Missing element ${sel}`);
+        return el as T;
+      };
+
+      const statusLine = getEl<HTMLParagraphElement>(".js-status");
+      const srActionLine = getEl<HTMLParagraphElement>(".js-sr-action");
+      const srTrickLine = getEl<HTMLParagraphElement>(".js-sr-trick");
+      const matchLine = getEl<HTMLSpanElement>(".js-match-line");
+      const returnHubBtn = getEl<HTMLButtonElement>(".js-return-hub");
+      const newHandBtn = getEl<HTMLButtonElement>(".js-new-hand");
+      const endOverlay = getEl<HTMLDivElement>(".js-end-overlay");
+      const endTitle = getEl<HTMLHeadingElement>(".js-end-title");
+      const endDetail = getEl<HTMLParagraphElement>(".js-end-detail");
+      const endRestartBtn = getEl<HTMLButtonElement>(".js-end-restart");
+      const handList = getEl<HTMLUListElement>(".js-hand-list");
+      const seatN = getEl<HTMLDivElement>(".js-seat-n");
+      const seatW = getEl<HTMLDivElement>(".js-seat-w");
+      const seatE = getEl<HTMLDivElement>(".js-seat-e");
+      const seatS = getEl<HTMLDivElement>(".js-seat-s");
+      const trickCard0 = getEl<HTMLDivElement>(".js-trick-0");
+      const trickCard1 = getEl<HTMLDivElement>(".js-trick-1");
+      const trickCard2 = getEl<HTMLDivElement>(".js-trick-2");
+      const trickCard3 = getEl<HTMLDivElement>(".js-trick-3");
+
+      const SEAT_LABEL: Record<Seat, string> = {
+        0: "YOU",
+        1: "S2",
+        2: "S3",
+        3: "S4",
+      };
+      const RULESET = rulesetObliviousDay();
+
+      function applyHubSettings() {
+        const raw = localStorage.getItem("dkhub_prefs");
+        if (raw) {
+          try {
+            const prefs = JSON.parse(raw);
+            if (prefs && typeof prefs === "object") {
+              if (prefs.dulleRule) RULESET.dulleBeatsDulle = prefs.dulleRule;
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        }
+      }
+
+      window.addEventListener("dkhub-settings-changed", applyHubSettings);
+      applyHubSettings();
+
+      let game: EngineStep = createEngine(undefined, RULESET);
+      let botTimer: number | null = null;
+      let captureTimers: number[] = [];
+      let rovingIndex = 0;
+      let lastFocusedCardId: string | null = null;
+      let isActionLocked = false;
+      let isTrickPaused = false;
+      const hubWrapper = root.closest(".game-mode-wrapper");
+      const inHub = !!hubWrapper && !!document.getElementById("game-container");
+      let isActive =
+        !inHub || !hubWrapper?.classList.contains("dkhub__mode--hidden");
+
+      function stopGame(): void {
+        isActive = false;
+        if (botTimer) window.clearTimeout(botTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        isTrickPaused = false;
+        isActionLocked = false;
+        endOverlay.classList.add("end-overlay--hidden");
+      }
+
+      function onHubEnter(ev: Event): void {
+        if (!inHub) return;
+        const mode = (ev as CustomEvent).detail?.mode;
+        if (mode !== root.getAttribute("data-dkhub-mode")) return;
+        isActive = true;
+        startHand();
+      }
+
+      function onHubExit(): void {
+        if (!inHub) return;
+        stopGame();
+      }
+
+      function fastForwardMeta(): void {
+        while (game.state.phase === "solo_selection") {
+          const seat = game.state.soloSelection.currentSeat;
+          game = reduce(game.state, { type: "PassSolo", seat }, RULESET);
+          handleEvents(game.events);
+        }
+      }
+
+      function seedLabel(seed: number): string {
+        return `#${(seed >>> 0).toString(36).toUpperCase().padStart(7, "0")}`;
+      }
+
+      const SUIT_SYMBOL: Record<Card["suit"], string> = {
+        clubs: "♣",
+        spades: "♠",
+        hearts: "♥",
+        diamonds: "♦",
+      };
+      function shortSuit(suit: Card["suit"]): string {
+        return SUIT_SYMBOL[suit] || "?";
+      }
+      function cardFace(card: Card): string {
+        return `${card.rank}${shortSuit(card.suit)}`;
+      }
+
+      function renderTrick(overridePlays?: TrickPlay[]): void {
+        const plays = overridePlays || game.state.trick;
+        const get = (seat: Seat) =>
+          plays.find((p) => p.seat === seat)?.card ?? null;
+
+        [trickCard0, trickCard1, trickCard2, trickCard3].forEach((el, i) => {
+          const card = get(i as Seat);
+          el.textContent = card ? cardFace(card) : "";
+          el.style.transform = "";
+          el.style.opacity = "";
+          el.className = `pile pile--${["s", "w", "n", "e"][i]}${card ? " pile--active" : ""}`;
+          if (card) {
+            el.setAttribute("data-suit", card.suit);
+            el.setAttribute(
+              "aria-label",
+              `${SEAT_LABEL[i as Seat]} played ${cardLabel(card)}`,
+            );
+          } else {
+            el.removeAttribute("data-suit");
+            el.setAttribute("aria-label", `${SEAT_LABEL[i as Seat]} waiting`);
+          }
+        });
+      }
+
+      function renderHand(): void {
+        handList.innerHTML = "";
+        const myHand = [...game.state.hands[0]].sort((a, b) => {
+          const aT = isTrump(a, game.state.gameMode);
+          const bT = isTrump(b, game.state.gameMode);
+          if (aT && !bT) return -1;
+          if (!aT && bT) return 1;
+          if (a.suit !== b.suit) return a.suit.localeCompare(b.suit);
+          return cardPoints(b.rank) - cardPoints(a.rank);
+        });
+
+        const legal = new Set(legalMoves(game.state, 0));
+        const myTurn = !game.state.finished && game.state.currentSeat === 0;
+        const clamped = Math.min(rovingIndex, Math.max(0, myHand.length - 1));
+
+        myHand.forEach((card, index) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          const isLegal = legal.has(card.id);
+
+          btn.type = "button";
+          btn.className = `card${isLegal ? " card--legal" : " card--illegal"}`;
+          btn.dataset.cardId = card.id;
+          btn.dataset.suit = card.suit;
+          btn.disabled = !myTurn || !isLegal;
+          btn.tabIndex = myTurn && index === clamped ? 0 : -1;
+
+          const label = document.createElement("span");
+          label.className = "card__label";
+          label.textContent = cardFace(card);
+          btn.append(label);
+
+          btn.setAttribute(
+            "aria-label",
+            `${cardLabel(card)}, ${isTrump(card, game.state.gameMode) ? "T" : "S"}${isLegal ? "" : ", !"}`,
+          );
+
+          btn.addEventListener("click", () => {
+            if (
+              isActionLocked ||
+              game.state.currentSeat !== 0 ||
+              game.state.finished
+            )
+              return;
+            isActionLocked = true;
+            lastFocusedCardId = card.id;
+            step({ type: "PlayCard", seat: 0, cardId: card.id });
+          });
+
+          li.append(btn);
+          handList.append(li);
+        });
+      }
+
+      function focusRovingButton(nextIndex: number): void {
+        const buttons = Array.from(handList.querySelectorAll("button"));
+        if (buttons.length === 0) return;
+        rovingIndex = Math.max(0, Math.min(nextIndex, buttons.length - 1));
+        for (let i = 0; i < buttons.length; i += 1)
+          buttons[i].tabIndex = i === rovingIndex ? 0 : -1;
+        buttons[rovingIndex].focus();
+      }
+
+      function installHandKeyboardNavigation(): void {
+        handList.addEventListener("keydown", (event) => {
+          const buttons = Array.from(handList.querySelectorAll("button"));
+          if (buttons.length === 0) return;
+          const active = document.activeElement;
+          const index = buttons.findIndex((button) => button === active);
+          const current = index >= 0 ? index : rovingIndex;
+
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            focusRovingButton(Math.min(current + 1, buttons.length - 1));
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            focusRovingButton(Math.max(current - 1, 0));
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            focusRovingButton(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            focusRovingButton(buttons.length - 1);
+          } else if (
+            (event.key === "Enter" || event.key === " ") &&
+            active instanceof HTMLButtonElement
+          ) {
+            event.preventDefault();
+            active.click();
+          }
+        });
+      }
+
+      function renderMeta(): void {
+        matchLine.textContent = seedLabel(game.state.seed);
+        [seatS, seatW, seatN, seatE].forEach((el, i) => {
+          el.dataset.turn = game.state.currentSeat === i ? "true" : "false";
+        });
+
+        if (game.state.finished) statusLine.textContent = "DONE.";
+        else if (game.state.currentSeat === 0)
+          statusLine.textContent = "YOUR TURN";
+        else statusLine.textContent = "...";
+      }
+
+      function handleEvents(events: EngineEvent[]): void {
+        for (const event of events) {
+          if (event.type === "CardPlayed") {
+            const card = findCard(event.cardId);
+            if (card)
+              srActionLine.textContent = `${SEAT_LABEL[event.seat]} ${cardFace(card)}`;
+            if (!events.some((e) => e.type === "TrickWon")) renderTrick();
+          }
+          if (event.type === "TrickWon") {
+            const winnerLabel = SEAT_LABEL[event.winner];
+            statusLine.textContent =
+              winnerLabel === "YOU" ? "YOURS" : `${winnerLabel} WINS`;
+            srTrickLine.textContent = `${winnerLabel} WINS THE TRICK.`;
+            const lastTrick = game.state.completedTricks.find(
+              (t) => t.index === event.trickIndex,
+            );
+            if (lastTrick) renderTrick(lastTrick.plays);
+            animateCapture(event.winner);
+          }
+          if (event.type === "HandFinished") {
+            statusLine.textContent = "DONE.";
+            const myTeam = game.state.teamBySeat[0];
+            const iWon = myTeam === event.winningTeam;
+            endOverlay.classList.remove("end-overlay--hidden");
+            if (iWon) {
+              endTitle.textContent = "VICTORY";
+              endTitle.style.color = "#fff";
+              const partners = ([0, 1, 2, 3] as Seat[]).filter(
+                (s) => s !== 0 && game.state.teamBySeat[s] === myTeam,
+              );
+              const partnerNames = partners
+                .map((p) => SEAT_LABEL[p])
+                .join(" & ");
+              const teamName = myTeam.toUpperCase();
+              const score =
+                myTeam === "re"
+                  ? `${event.cardPointsRe}-${event.cardPointsKontra}`
+                  : `${event.cardPointsKontra}-${event.cardPointsRe}`;
+              endDetail.textContent = `YOU & ${partnerNames} (${teamName}) WON ${score}`;
+            } else {
+              endTitle.textContent = "DEFEAT";
+              endTitle.style.color = "#f44";
+              endDetail.textContent = "";
+            }
+          }
+        }
+      }
+
+      function animateCapture(winner: Seat): void {
+        isTrickPaused = true;
+        const winnerEl = [seatS, seatW, seatN, seatE][winner];
+
+        const t1 = window.setTimeout(() => {
+          const activePiles = root.querySelectorAll(".pile--active");
+          activePiles.forEach((p) => {
+            p.classList.add("pile--capturing");
+            const winnerRect = winnerEl.getBoundingClientRect();
+            const pileRect = p.getBoundingClientRect();
+            const dx = winnerRect.left - pileRect.left;
+            const dy = winnerRect.top - pileRect.top;
+            (p as HTMLElement).style.transform =
+              `translate(${dx}px, ${dy}px) scale(0.2)`;
+            (p as HTMLElement).style.opacity = "0";
+          });
+
+          const t2 = window.setTimeout(() => {
+            isTrickPaused = false;
+            renderAll();
+            maybeRunBots();
+          }, 600);
+          captureTimers.push(t2);
+        }, 1500);
+        captureTimers.push(t1);
+      }
+
+      function findCard(cardId: string): Card | null {
+        for (const seat of [0, 1, 2, 3] as Seat[]) {
+          const card = game.state.hands[seat].find(
+            (entry) => entry.id === cardId,
+          );
+          if (card) return card;
+        }
+        for (const play of game.state.trick)
+          if (play.card.id === cardId) return play.card;
+        for (const trick of game.state.completedTricks) {
+          for (const play of trick.plays)
+            if (play.card.id === cardId) return play.card;
+        }
+        return null;
+      }
+
+      function getBotSpeed(): number {
+        const raw = localStorage.getItem("dkhub_prefs");
+        if (raw) {
+          try {
+            const prefs = JSON.parse(raw);
+            return parseInt(prefs.botSpeed, 10) || 800;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        return 800;
+      }
+
+      function maybeRunBots(): void {
+        if (!isActive) return;
+        if (
+          game.state.finished ||
+          game.state.currentSeat === 0 ||
+          isTrickPaused
+        )
+          return;
+        if (botTimer) window.clearTimeout(botTimer);
+        botTimer = window.setTimeout(() => {
+          if (
+            !isActive ||
+            game.state.finished ||
+            game.state.currentSeat === 0 ||
+            isTrickPaused
+          )
+            return;
+          const seat = game.state.currentSeat;
+          const legal = legalMoves(game.state, seat)
+            .map((id) => game.state.hands[seat].find((card) => card.id === id))
+            .filter((card): card is Card => card !== undefined);
+          pickBotCardAsync({
+            seat,
+            phase: game.state.phase,
+            hand: game.state.hands[seat],
+            currentTrick: game.state.trick,
+            completedTricks: game.state.completedTricks,
+            legalCards: legal,
+            trickIndex: game.state.trickIndex,
+            gameMode: game.state.gameMode,
+            announcements: game.state.announcements,
+            specialCallouts: game.state.specialCallouts,
+            schweineActiveSeat: game.state.schweineActiveSeat,
+            ruleset: RULESET,
+          }).then((cardId) => {
+            step({ type: "PlayCard", seat, cardId });
+          });
+        }, getBotSpeed());
+      }
+
+      function step(action: GameAction): void {
+        if (!isActive) return;
+        game = reduce(game.state, action, RULESET);
+        handleEvents(game.events);
+        fastForwardMeta();
+        if (!isTrickPaused) {
+          renderAll();
+          maybeRunBots();
+        }
+      }
+
+      function renderAll(): void {
+        isActionLocked = false;
+        renderMeta();
+        if (!isTrickPaused) renderTrick();
+        renderHand();
+        if (game.state.currentSeat === 0 && !game.state.finished) {
+          const buttons = Array.from(handList.querySelectorAll("button"));
+          if (buttons.length > 0) {
+            const target = lastFocusedCardId
+              ? buttons.find((b) => b.dataset.cardId === lastFocusedCardId)
+              : null;
+            const idx = target ? buttons.indexOf(target) : rovingIndex;
+            focusRovingButton(idx);
+          }
+        }
+      }
+
+      function startHand(): void {
+        if (!isActive) return;
+        if (botTimer) window.clearTimeout(botTimer);
+        captureTimers.forEach((t) => window.clearTimeout(t));
+        captureTimers = [];
+        isTrickPaused = false;
+        isActionLocked = false;
+
+        game = createEngine(undefined, RULESET);
+        endOverlay.classList.add("end-overlay--hidden");
+        handleEvents(game.events);
+        fastForwardMeta();
+        renderAll();
+        maybeRunBots();
+      }
+
+      newHandBtn.addEventListener("click", startHand);
+      endRestartBtn.addEventListener("click", startHand);
+      returnHubBtn.addEventListener("click", () => {
+        stopGame();
+        const exitBtn = document.getElementById(
+          "exitGame",
+        ) as HTMLButtonElement | null;
+        if (exitBtn) {
+          exitBtn.click();
+        } else {
+          window.location.href = "/doppelkopf/";
+        }
+      });
+
+      window.addEventListener("dkhub-enter", onHubEnter);
+      window.addEventListener("dkhub-exit", onHubExit);
+      installHandKeyboardNavigation();
+      if (isActive) startHand();
+
+      document.addEventListener(
+        "astro:before-swap",
+        () => {
+          stopGame();
+          window.removeEventListener("dkhub-enter", onHubEnter);
+          window.removeEventListener("dkhub-exit", onHubExit);
+          window.removeEventListener(
+            "dkhub-settings-changed",
+            applyHubSettings,
+          );
+        },
+        { once: true },
+      );
+    });
+  }
+
+  // Handle both initial load and view transitions
+  document.addEventListener("astro:page-load", init);
+  init();
+</script>
+
+<style>
+  .oblivious-mode {
+    min-height: 100svh;
+    background: #000;
+    color: #fff;
+    padding: 1rem;
+    font-family: "JetBrains Mono Variable", monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    overscroll-behavior: none;
+  }
+
+  .sr-only {
+    @apply sr-only;
+  }
+
+  .shell {
+    width: 100%;
+    max-width: min(90vw, 40rem);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 1rem;
+    min-height: 0;
+  }
+
+  .status-minimal {
+    font-size: 1rem;
+    font-weight: 900;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.1em;
+  }
+
+  .table {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    max-height: 50svh;
+    margin: 0 auto;
+    border: 1px solid #333;
+    background: #050505;
+  }
+
+  .seat {
+    position: absolute;
+    font-size: 0.7rem;
+    color: #666;
+    padding: 0.5rem;
+  }
+
+  .seat[data-turn="true"] {
+    color: #fff;
+    text-decoration: underline;
+  }
+
+  .seat--n {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .seat--s {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .seat--w {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .seat--e {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .trick {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 50%;
+    height: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .pile {
+    position: absolute;
+    width: clamp(2.8rem, 12vw, 4.5rem);
+    height: clamp(4rem, 17vw, 6.3rem);
+    border: 1px solid #222;
+    display: grid;
+    place-items: center;
+    font-size: clamp(0.9rem, 4vw, 1.2rem);
+    background: #000;
+    transition:
+      transform 0.2s,
+      opacity 0.2s;
+    opacity: 0;
+  }
+
+  .pile--active {
+    opacity: 1;
+  }
+
+  .pile--n {
+    top: 5%;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .pile--s {
+    bottom: 5%;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .pile--w {
+    left: 5%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .pile--e {
+    right: 5%;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .pile[data-suit="hearts"],
+  .pile[data-suit="diamonds"] {
+    color: #f44;
+  }
+
+  .hand-area {
+    display: flex;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .hand {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 0.15rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-height: 25svh;
+    overflow-y: auto;
+  }
+
+  .card {
+    width: clamp(2.4rem, 8.5vw, 3.4rem);
+    aspect-ratio: 5/7;
+    background: #000;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    touch-action: manipulation;
+  }
+
+  .card:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .card--legal:hover {
+    border-color: #fff;
+    transform: translateY(-1px);
+  }
+  .card--illegal {
+    border-color: #222;
+    color: #444;
+  }
+
+  .card__label {
+    font-size: clamp(0.75rem, 3.2vw, 1.1rem);
+    font-weight: 700;
+    letter-spacing: -0.05em;
+  }
+
+  .card[data-suit="hearts"],
+  .card[data-suit="diamonds"] {
+    color: #f44;
+  }
+
+  .pile--capturing {
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  .end-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease-out;
+  }
+
+  .end-overlay--hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .end-title {
+    font-size: 4rem;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    margin: 0;
+  }
+
+  .end-detail {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 1rem;
+    letter-spacing: 0.1em;
+  }
+
+  .mt-4 {
+    margin-top: 2rem;
+  }
+
+  .meta-minimal {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.6rem;
+    color: #444;
+    padding-top: 0.5rem;
+    width: 100%;
+  }
+
+  .btn-minimal {
+    background: transparent;
+    border: 1px solid #333;
+    color: #666;
+    font: inherit;
+    cursor: pointer;
+    padding: 0.15rem 0.4rem;
+  }
+
+  .btn-minimal:hover {
+    color: #fff;
+    border-color: #fff;
+  }
+
+  .links {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.6rem;
+    opacity: 0.4;
+    flex-shrink: 0;
+  }
+  .link {
+    color: #fff;
+  }
+</style>

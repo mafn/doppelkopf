@@ -1,0 +1,43 @@
+# Dependencies and build output
+node_modules/
+dist/
+.astro/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration
+.env
+.env.*
+*.local
+.DS_Store
+.idea/
+.vscode/
+
+# Generated ML data and artifacts
+data/ml/
+ml/__pycache__/
+*.pyc
+*.joblib
+public/models/*.onnx
+public/models/*.onnx.meta.json
+public/vendor/onnxruntime/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Superseded local research and daily-project planning
+docs/plans/doppelkopf-engine-bots-assets.md
+docs/plans/doppelkopf/AI-CURRICULUM-V2-POLISH.md
+docs/plans/doppelkopf/AI-PARTNER-INFERENCE.md
+docs/plans/doppelkopf/ARCHITECTURE.md
+docs/plans/doppelkopf/CARD-ART-BRIEF.md
+docs/plans/doppelkopf/DESIGN.md
+docs/plans/doppelkopf/ML-BOTS.md
+docs/plans/doppelkopf/README.md
+docs/plans/doppelkopf/TRACKER.md
+docs/plans/doppelkopf/WHAT-STILL-NEEDS-TO-BE-DONE.md
+docs/research/

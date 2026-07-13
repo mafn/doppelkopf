@@ -1,0 +1,40 @@
+---
+interface LinkItem {
+  href: string;
+  label: string;
+}
+
+interface Props {
+  linkClass?: string;
+  separatorClass?: string;
+  showSeparators?: boolean;
+  items?: LinkItem[];
+}
+
+const defaultItems: LinkItem[] = [
+  { href: "/doppelkopf/", label: "Home" },
+  { href: "/doppelkopf/classic/", label: "Classic" },
+  { href: "/doppelkopf/oblivious/", label: "Oblivious" },
+  { href: "/doppelkopf/tournament/", label: "Tournament" },
+];
+
+const {
+  linkClass = "",
+  separatorClass = "",
+  showSeparators = true,
+  items = defaultItems,
+} = Astro.props;
+---
+
+{
+  items.map((item, idx) => (
+    <>
+      <a href={item.href} class={linkClass}>
+        {item.label}
+      </a>
+      {showSeparators && idx < items.length - 1 && (
+        <span class={separatorClass}>•</span>
+      )}
+    </>
+  ))
+}

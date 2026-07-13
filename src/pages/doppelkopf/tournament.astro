@@ -1,0 +1,16 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import TournamentMode from "../../components/doppelkopf/modes/Tournament.astro";
+
+const canonicalURL = new URL("/doppelkopf/tournament/", Astro.site);
+---
+
+<BaseLayout
+  title="Doppelkopf — Tournament"
+  description="Tournament-style Doppelkopf against three bots."
+  renderH1={false}
+  shellMode="immersive"
+  canonicalURL={canonicalURL}
+>
+  <TournamentMode />
+</BaseLayout>

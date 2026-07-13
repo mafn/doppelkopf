@@ -1,0 +1,171 @@
+---
+import "../styles/global.css";
+import SiteLinks from "../components/SiteLinks.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  canonicalURL?: string | URL;
+  renderH1?: boolean;
+  noindex?: boolean;
+  shellMode?: "default" | "compact" | "immersive";
+}
+
+const {
+  title = "Täglich Doko",
+  description = "Configurable Doppelkopf in the browser.",
+  image = "/favicon.svg",
+  canonicalURL: propCanonicalURL,
+  renderH1 = true,
+  noindex = false,
+  shellMode = "default",
+} = Astro.props;
+
+const canonicalURL =
+  propCanonicalURL ||
+  (Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined);
+const pageURL = canonicalURL || Astro.url;
+
+// Normalize to no trailing slash (except "/") so CSS can target reliably.
+const dataPath =
+  Astro.url.pathname.endsWith("/") && Astro.url.pathname !== "/"
+    ? Astro.url.pathname.slice(0, -1)
+    : Astro.url.pathname;
+
+const mainClass =
+  shellMode === "immersive"
+    ? "flex-1"
+    : shellMode === "compact"
+      ? "flex-1 pb-20"
+      : "flex-1 pb-20 sm:pb-0";
+---
+
+<!doctype html>
+<html lang="en" data-path={dataPath}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <meta name="generator" content={Astro.generator} />
+
+    {
+      noindex && (
+        <meta name="robots" content="noindex, follow, nosnippet, noarchive" />
+      )
+    }
+
+    <!-- Canonical URL -->
+    {canonicalURL && <link rel="canonical" href={canonicalURL} />}
+
+    <!-- Primary Meta Tags -->
+    <title>{title}</title>
+    <meta name="title" content={title} />
+    <meta name="description" content={description} />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={pageURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(image, pageURL)} />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content={pageURL} />
+    <meta property="twitter:title" content={title} />
+    <meta property="twitter:description" content={description} />
+    <meta property="twitter:image" content={new URL(image, pageURL)} />
+
+    <style>
+      :root {
+        --shell-bg: rgba(255, 255, 255, 0.96);
+        --shell-text: #0f172a;
+        --shell-muted: #6b7280;
+        --shell-border: #e5e7eb;
+        --shell-link: #4b5563;
+        --shell-link-hover: #111827;
+        --shell-pill-bg: rgba(255, 255, 255, 0.9);
+      }
+
+      html {
+        background: var(--shell-bg);
+      }
+
+      body[data-shell="compact"] > header,
+      body[data-shell="compact"] > footer {
+        display: none !important;
+      }
+
+      body[data-shell="compact"] > nav[aria-label="Site"] {
+        display: flex !important;
+      }
+
+      body[data-shell="immersive"] > header,
+      body[data-shell="immersive"] > footer,
+      body[data-shell="immersive"] > nav[aria-label="Site"] {
+        display: none !important;
+      }
+    </style>
+
+    <slot name="head" />
+  </head>
+  <body
+    data-shell={shellMode}
+    class="flex min-h-screen flex-col bg-[var(--shell-bg)] text-[var(--shell-text)] antialiased"
+  >
+    <header
+      class="hidden items-center justify-between border-b border-[color:var(--shell-border)] bg-[var(--shell-bg)] p-4 backdrop-blur sm:flex"
+    >
+      <nav>
+        <a
+          href="/doppelkopf/"
+          class="font-mono text-sm font-bold text-[var(--shell-text)] hover:underline"
+        >
+          Täglich Doko
+        </a>
+      </nav>
+      <nav>
+        <a
+          href="/doppelkopf/classic/"
+          class="font-mono text-sm text-[var(--shell-link)] hover:text-[var(--shell-link-hover)] hover:underline"
+        >
+          [ play ]
+        </a>
+      </nav>
+    </header>
+
+    <main class={mainClass}>
+      {renderH1 && <h1 class="sr-only">{title}</h1>}
+      <slot />
+    </main>
+
+    <footer
+      class="border-t border-[color:var(--shell-border)] bg-[var(--shell-bg)] p-4 text-center backdrop-blur"
+    >
+      <div
+        class="flex flex-col items-center gap-2 font-mono text-xs text-[var(--shell-muted)] sm:flex-row sm:justify-center"
+      >
+        <span>&copy; {new Date().getFullYear()} Täglich Doko.</span>
+
+        <span class="hidden sm:inline">•</span>
+
+        <SiteLinks
+          linkClass="text-[var(--shell-link)] hover:text-[var(--shell-link-hover)] hover:underline"
+          separatorClass="hidden sm:inline text-[var(--shell-border)]"
+        />
+      </div>
+    </footer>
+
+    <nav
+      class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[1000] flex -translate-x-1/2 items-center gap-3 rounded-full border border-[color:var(--shell-border)] bg-[var(--shell-pill-bg)] px-3 py-2 font-mono text-xs text-[var(--shell-text)] shadow-lg backdrop-blur sm:hidden"
+      aria-label="Site"
+    >
+      <SiteLinks
+        linkClass="text-[var(--shell-link)] hover:text-[var(--shell-link-hover)] hover:underline"
+        separatorClass="text-[var(--shell-border)]"
+      />
+    </nav>
+  </body>
+</html>
