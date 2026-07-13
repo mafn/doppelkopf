@@ -7,6 +7,7 @@ export default defineConfig({
     "doppelkopf-ml-features.spec.ts",
     "team-evidence.spec.ts",
     "engine-replay-determinism.spec.ts",
+    "doppelkopf-v3-boundaries.spec.ts",
   ],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

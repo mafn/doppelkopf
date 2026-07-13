@@ -25,6 +25,14 @@ public/models/*.onnx
 public/models/*.onnx.meta.json
 public/vendor/onnxruntime/
 
+# Generated V3 data, reports, and local benchmark results
+data/doppelkopf-v3/
+reports/doppelkopf-v3/*
+!reports/doppelkopf-v3/golden/
+!reports/doppelkopf-v3/golden/**
+benchmarks/doppelkopf-v3/
+trajectories/doppelkopf-v3/
+
 # Logs
 *.log
 npm-debug.log*
