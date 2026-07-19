@@ -1,5 +1,4 @@
-import type { ReplaySchemaV3, GameDefinition } from "./core";
-import type { GameActionV3 } from "./actions";
+import type { GameDefinition } from "./core";
 
 export interface ReplayStepV3 {
   actionId: string;
