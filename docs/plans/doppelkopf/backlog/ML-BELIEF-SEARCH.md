@@ -8,7 +8,7 @@ Scope: training data, structured belief, learned policy, population training, ev
 We will build and evaluate exactly two product agent designs:
 
 1. **Structured-Belief Policy Agent**: a rule-conditioned policy/value model with a permutation-invariant hand encoder, an ordered public-event encoder, and an explicit learned distribution over feasible hidden worlds. A matched GRU-versus-small-causal-transformer experiment selects the event encoder; those are two variants of one product design, not separate agents.
-2. **Deployment candidate B split**: 
+2. **Deployment candidate B split**:
    - **Offline rollout policy improver**: An operator estimating Q under a fixed population prior and fixed continuation policies.
    - **Distilled policy**: The learned policy distilled from the offline rollout policy improver.
    - **Optional live hybrid**: Only deployed if profiling allows. GO-MCTS and generative observation-space planning are deferred to a later experimental phase.
@@ -452,6 +452,7 @@ DISTILL-002 + DEPLOY-003
 **Dependencies:** `AGENT-001`, `BEL-001`, `POP-001`
 
 **Context and scope:** Implement the primary search architecture using "Root-action Monte Carlo evaluation over belief particles with fixed rollout policies" operational flow:
+
 1. Sample particles (feasible hidden worlds).
 2. Enumerate legal root actions.
 3. For each root action, use common particles.

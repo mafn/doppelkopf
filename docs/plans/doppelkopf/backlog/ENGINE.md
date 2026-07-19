@@ -1,6 +1,6 @@
 ## Workstream A: Greenfield Engine
 
-The V3 engine lives under `src/lib/doppelkopf/v3/`. Existing files under `src/lib/doppelkopf/` are legacy evidence only and do not constrain V3 types, state, actions, or behavior. Unit and conformance tests live under `tests/doppelkopf-v3/`. Mandate a fast Node runner for mechanics, settlements, and generated hands. Relegate Playwright *only* to browser parity, Web Worker tests, and ONNX integration.
+The V3 engine lives under `src/lib/doppelkopf/v3/`. Existing files under `src/lib/doppelkopf/` are legacy evidence only and do not constrain V3 types, state, actions, or behavior. Unit and conformance tests live under `tests/doppelkopf-v3/`. Mandate a fast Node runner for mechanics, settlements, and generated hands. Relegate Playwright _only_ to browser parity, Web Worker tests, and ONNX integration.
 
 All tasks use these references:
 
