@@ -84,9 +84,9 @@ The fast gate covers formatting, V3 type checks, V3 unit tests, the Astro build,
 
 **Context and scope**
 
-Independent engine, baseline, model, and evaluation agents need one declarative way to consume certified decision points. Implement the shared fixture loader and tactical-oracle extension in `src/lib/doppelkopf/v3/testkit` without redefining the canonical state/replay codec owned by `ENG3-014` or exposing arbitrary state mutation to production code.
+Independent engine, baseline, model, and evaluation agents need one declarative way to consume certified decision points. Implement the shared fixture loader and tactical-oracle extension in `src/lib/doppelkopf/v3/testkit` without redefining the canonical state/replay hash chain codec owned by `ENG3-014` or exposing arbitrary state mutation to production code.
 
-Prefer fixture setup through `GameDefinition` plus an action prefix. Permit a versioned certified state snapshot only when a legal prefix cannot express the required case. Support assertions over transition acceptance or rejection, atomicity, emitted events, seat utility, observation hash, legal actions, acceptable action sets, and reviewed expected-value ordering.
+Prefer fixture setup through `GameDefinition` and `HandContextV3` plus an action prefix. Permit a versioned certified snapshot of an `information-set` (weighted worlds and continuation models) only when a legal prefix cannot express the required case. Support assertions over transition acceptance or rejection, atomicity, emitted events, seat utility, observation hash, legal actions, acceptable action sets, and reviewed expected-value ordering.
 
 **Definition of done**
 
@@ -112,9 +112,9 @@ Prefer fixture setup through `GameDefinition` plus an action prefix. Permit a ve
 
 **Context and scope**
 
-Consume the engine conformance fixtures owned by `ENG3-014` and add agent-facing partnership and tactical evidence rather than duplicating engine certification.
+Consume the engine conformance fixtures owned by `ENG3-014` and add agent-facing partnership and tactical evidence rather than duplicating engine certification. Implement differential fuzzing/testing between the legacy V2 engine and the new V3 engine on the subset of rules where V2 is known to be correct.
 
-Add tactical categories for smearing, partner overtrumps, minimum winning trump, Dulle and Fox safety, Hochzeit clarification, Armut acceptance/exchange/support, announcements, exhausted suits, solved endgames, and ruleset-specific specials. Each tactical case must define either a set of acceptable actions or a reviewed expected-value ordering.
+Add tactical categories for smearing, partner overtrumps, minimum winning trump, Dulle and Fox safety, Hochzeit clarification, Armut acceptance/exchange/support, announcements, exhausted suits, solved endgames, and ruleset-specific specials. Each tactical fixture represents an `information-set` to prevent rewarding clairvoyance in imperfect-information decisions, and must define either a set of acceptable actions or a reviewed expected-value ordering.
 
 **Definition of done**
 
@@ -122,6 +122,7 @@ Add tactical categories for smearing, partner overtrumps, minimum winning trump,
 - Every fixture reaches its decision through the certified loader.
 - Failures identify category, seed/setup, actor, observation hash, legal actions, and actual action.
 - Equivalent plays are not incorrectly encoded as one uniquely correct stylistic move.
+- Differential fuzzing between V2 and V3 consistently passes on the validated subset of rules.
 
 **Testing plan**
 
@@ -129,6 +130,7 @@ Add tactical categories for smearing, partner overtrumps, minimum winning trump,
 - Verify referenced `ENG3-014` defects are present without copying their assertions into this corpus.
 - Verify observation and legal-action expectations from the fixture against `CORE-2` projections.
 - Review all expected-value fixtures independently before marking them promotion-blocking.
+- Execute differential fuzzing/testing between V2 and V3 engines over randomly generated valid hands.
 
 ---
 
@@ -138,7 +140,7 @@ Add tactical categories for smearing, partner overtrumps, minimum winning trump,
 
 **Context and scope**
 
-Models and bots must be selected through validated capabilities rather than filenames, feature dimensions, or local-storage strings. Implement `AgentManifestV3` runtime validation and compatibility resolution in `src/lib/doppelkopf/v3/agents`.
+Models and bots must be selected through validated capabilities rather than filenames, feature dimensions, or local-storage strings. Implement `AgentManifestV3` runtime validation and compatibility resolution in `src/lib/doppelkopf/v3/agents`. Compatibility is empirical, not categorical. Models are `native`, `certified-compatible` (after hash evaluation), or `unsupported`. Rule conditioning must expose derived mechanics, not just flags.
 
 Validate agent/model version, observation and action schemas, ruleset IDs and hashes, action/phase capabilities, architecture dimensions, dataset/run identifiers, ONNX and runtime versions, artifact checksums, evaluation report ID, and interactive fallback policy. Return structured incompatibility reasons suitable for logs and UI error handling.
 

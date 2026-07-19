@@ -8,9 +8,12 @@ Scope: training data, structured belief, learned policy, population training, ev
 We will build and evaluate exactly two product agent designs:
 
 1. **Structured-Belief Policy Agent**: a rule-conditioned policy/value model with a permutation-invariant hand encoder, an ordered public-event encoder, and an explicit learned distribution over feasible hidden worlds. A matched GRU-versus-small-causal-transformer experiment selects the event encoder; those are two variants of one product design, not separate agents.
-2. **Belief-Search Agent**: the same learned core augmented by observation-correct belief or observation-space planning. Search gains are distilled into the policy, and live browser search is retained only if it adds measured value beyond distillation.
+2. **Deployment candidate B split**: 
+   - **Offline rollout policy improver**: An operator estimating Q under a fixed population prior and fixed continuation policies.
+   - **Distilled policy**: The learned policy distilled from the offline rollout policy improver.
+   - **Optional live hybrid**: Only deployed if profiling allows. GO-MCTS and generative observation-space planning are deferred to a later experimental phase.
 
-A small engineered MLP may be used to validate data and training plumbing. Uniform PIMC is a search lower bound. Neither is a third product design.
+A small engineered MLP may be used to validate data and training plumbing. Uniform PIMC is a simple determinization baseline. Neither is a third product design.
 
 ## External gates
 
@@ -103,7 +106,7 @@ DISTILL-002 + DEPLOY-003
 
 **Dependencies:** `OBS-READY`
 
-**Context and scope:** Map the complete engine action surface to stable model selectors. Card and small meta actions may use fixed heads; combinatorial Armut exchange uses a structured selector rather than a global combination vocabulary.
+**Context and scope:** Map the complete engine action surface to stable model selectors. Card and small meta actions may use fixed heads; for the combinatorial Armut exchange macro-action encoding, use a dynamic candidate-action encoder. Since searching all 455 subsets is impractical, implement an action proposal stage: evaluate cheaply, retain top-k and diverse candidates, then allocate rollouts.
 
 **Definition of done:**
 
@@ -160,16 +163,16 @@ DISTILL-002 + DEPLOY-003
 
 **Testing plan:** Mutation-based invalid worlds; one-constraint-at-a-time fixtures; exhaustive toy games; all engine-generated latent worlds pass; all deliberately impossible worlds fail for the expected reason.
 
-### BEL-003: Masked autoregressive world allocator
+### BEL-003: Exact constrained DP world sampler
 
 **Dependencies:** `BEL-002`, `ML-002`, `DATA-001`
 
-**Context and scope:** Learn `p(world | observation)` by allocating remaining card-type counts in canonical order while updating capacities and completion masks after every allocation.
+**Context and scope:** Implement and validate the constraint-exact DP world sampler; optionally train one-shot allocation potentials and observed-action likelihood models to generate feasible worlds.
 
 **Definition of done:**
 
-- Training exposes exact log likelihood; inference exposes deterministic and stochastic feasible samples.
-- Decoding prevents invalid or non-completable partial allocations rather than repairing them afterward.
+- Training exposes exact log likelihood (if learned potentials are used); inference exposes deterministic and stochastic feasible samples.
+- The DP construction prevents invalid or non-completable partial allocations by design rather than repairing them afterward.
 - Team configurations are derived from complete sampled worlds and current phase semantics.
 - Marginal card/team diagnostics are calculated from samples and remain copy invariant.
 
@@ -179,7 +182,7 @@ DISTILL-002 + DEPLOY-003
 
 **Dependencies:** `BEL-003`, `DATA-001`
 
-**Context and scope:** Train and select the allocator independently of policy strength so belief quality cannot be hidden by self-play results.
+**Context and scope:** Train and select the optional allocation potentials and likelihood models independently of policy strength so belief quality cannot be hidden by self-play results.
 
 **Definition of done:**
 
@@ -267,7 +270,7 @@ DISTILL-002 + DEPLOY-003
 
 **Dependencies:** `TRAIN-001`, `MODEL-004`, `MODEL-002` or `MODEL-003`
 
-**Context and scope:** Implement the model-free learner with legal masked likelihoods, per-seat episodic returns, entropy, and optional auxiliary losses. Dense trick-point reward is disabled by default.
+**Context and scope:** Implement the model-free learner with legal masked likelihoods, per-seat episodic returns, entropy, and optional auxiliary losses. Dense trick-point reward is disabled by default. Compare terminal Monte Carlo action-value learning and PPO actor-critic with an observation-only baseline, where `gamma = 1`. Select the baseline algorithm using sample efficiency, stability, final strength, calibration and implementation complexity.
 
 **Definition of done:**
 
@@ -276,19 +279,19 @@ DISTILL-002 + DEPLOY-003
 - Runs are resumable and carry complete config/data/model provenance.
 - Invalid masks, non-finite values, or incompatible records stop training.
 
-**Testing plan:** Hand-calculated multi-seat return/GAE fixtures; no-cross-seat regression; tiny overfit; resume equivalence; temperature/log-probability parity; NaN and invalid-mask failures.
+**Testing plan:** Hand-calculated multi-seat return fixtures; no-cross-seat regression; tiny overfit; resume equivalence; temperature/log-probability parity; NaN and invalid-mask failures.
 
 ### TRAIN-003: Joint policy and structured-belief training
 
 **Dependencies:** `TRAIN-002`, `BEL-004`, both encoder variants for comparison runs
 
-**Context and scope:** Couple the selected policy losses with the structured allocator without allowing privileged belief labels into runtime actor inputs.
+**Context and scope:** Couple the selected policy losses with the structured belief components without allowing privileged belief labels into runtime actor inputs.
 
 **Definition of done:**
 
 - Supports frozen-belief, alternating, and joint-fine-tune schedules with explicit weights.
 - Policy strength and belief calibration are reported separately.
-- Training detects and rejects allocator validity or calibration degradation.
+- Training detects and rejects sampler validity or calibration degradation.
 - Exportable actor inputs remain identical whether privileged labels are present or absent.
 
 **Testing plan:** Frozen-parameter checks; loss-schedule tests; component checkpoint compatibility; tiny end-to-end run; privileged-label shuffle test; resume parity.
@@ -361,8 +364,10 @@ DISTILL-002 + DEPLOY-003
 
 - Partners and opponents vary independently.
 - Natural and rare-phase training mixtures are recorded separately from evaluation distributions.
-- Promotion uses cross-play and worst-partner constraints, not self-play Elo alone.
+- Promotion uses cross-play, held-out partner evaluation, and worst-partner constraints, not self-play Elo alone.
 - Population retention and replacement rules prevent unbounded growth.
+- Non-transitive cycling detection is applied to evaluate skill progression.
+- PSRO and NFSP are supported as optional ablations.
 
 **Testing plan:** Sampling-distribution tests; frozen-opponent integrity; deterministic reduced league; promotion rejection on stranger-partner regression; retention-limit test.
 
@@ -413,11 +418,11 @@ DISTILL-002 + DEPLOY-003
 
 ## Belief-aware search
 
-### SEARCH-001: Uniform constrained PIMC lower bound
+### SEARCH-001: Uniform constrained PIMC simple determinization baseline
 
 **Dependencies:** `AGENT-001`, `BEL-001`
 
-**Context and scope:** Establish a simple determinization baseline and exercise engine clone/apply/undo. It is explicitly a lower bound affected by strategy fusion.
+**Context and scope:** Establish a simple determinization baseline and exercise engine clone/apply/undo. It is affected by strategy fusion.
 
 **Definition of done:**
 
@@ -442,11 +447,20 @@ DISTILL-002 + DEPLOY-003
 
 **Testing plan:** Weight normalization and underflow; uniform equivalence; low-ESS fallback; tactical fixtures; deterministic node/sample budgets.
 
-### SEARCH-003: Actor-correct information-set or particle search
+### SEARCH-003: Belief rollout search (primary search architecture)
 
 **Dependencies:** `AGENT-001`, `BEL-001`, `POP-001`
 
-**Context and scope:** Implement a serious planning candidate in which every simulated actor receives only its own hand, legitimate private memory, and public history. Policy/style identity is sampled or assigned from the population.
+**Context and scope:** Implement the primary search architecture using "Root-action Monte Carlo evaluation over belief particles with fixed rollout policies" operational flow:
+1. Sample particles (feasible hidden worlds).
+2. Enumerate legal root actions.
+3. For each root action, use common particles.
+4. Apply action.
+5. Rollout all players with fixed policies.
+6. Aggregate terminal utility for each root action.
+7. Report uncertainty.
+
+Policy/style identity is sampled or assigned from the population, and every simulated actor receives only its own hand, legitimate private memory, and public history.
 
 **Definition of done:**
 
@@ -456,11 +470,11 @@ DISTILL-002 + DEPLOY-003
 
 **Testing plan:** Instrumented no-leakage assertions; per-node observation equality; impossible-history detection; solved imperfect-information toy games; deterministic budgets; style-mixture tests.
 
-### SEARCH-004: Observation-space generative search prototype
+### SEARCH-004: GO-MCTS and generative observation-space search (Experimental)
 
 **Dependencies:** `AGENT-001`, `DATA-001`
 
-**Context and scope:** Train a compact model of future legal observations/actions and evaluate root decisions without exposing complete sampled worlds to simulated actors.
+**Context and scope:** Move GO-MCTS and observation-space generative search to a later experimental phase. Train a compact model of future legal observations/actions and evaluate root decisions without exposing complete sampled worlds to simulated actors.
 
 **Definition of done:**
 
@@ -502,19 +516,20 @@ DISTILL-002 + DEPLOY-003
 
 **Testing plan:** Search replay regeneration; legal-target normalization; deterministic shards; checksum/manifest validation; static proof that student inputs contain no latent world.
 
-### DISTILL-002: Search distillation and validation
+### DISTILL-002: Optional search distillation and validation
 
 **Dependencies:** `DISTILL-001`, `TRAIN-003`, `POP-002`
 
-**Context and scope:** Fine-tune policy/value outputs toward selected search targets while retaining natural-play calibration and co-play robustness.
+**Context and scope:** Make search distillation optional and promotion-gated. Fine-tune policy/value outputs toward selected search targets while retaining natural-play calibration and co-play robustness. Evaluate search distillation by tactical regret, not global KL divergence.
 
 **Definition of done:**
 
+- Search distillation is an optional phase gated by teacher-quality and student-fidelity.
 - Search loss weights and source budgets are explicit.
-- Evaluation compares pre/post tactical strength, natural game points, belief calibration, cross-play, stranger-partner, latency, and artifact size.
+- Evaluation compares pre/post tactical strength (measuring tactical regret), natural game points, belief calibration, cross-play, stranger-partner, latency, and artifact size.
 - The candidate is rejected for inherited convention, leakage, or critical-slice regressions.
 
-**Testing plan:** Tiny overfit; zero-search-weight equivalence; legal masked target loss; held-out search states; stranger-partner promotion gate; calibration regression test.
+**Testing plan:** Tiny overfit; zero-search-weight equivalence; legal masked target loss evaluated by tactical regret; held-out search states; stranger-partner promotion gate; calibration regression test.
 
 ### DEPLOY-003: Selective browser search worker
 
@@ -530,17 +545,17 @@ DISTILL-002 + DEPLOY-003
 
 **Testing plan:** Cancellation/deadline injection; worker lifecycle and memory; policy-only equivalence when disabled; branch isolation; browser latency; fallback telemetry.
 
-### AGENT-002: Belief-Search Agent release
+### AGENT-002: Distilled Policy and Search Teacher release
 
 **Dependencies:** `SEARCH-005`, `DISTILL-002`, `DEPLOY-003`
 
-**Context and scope:** Assemble product design two from the same structured-belief core, the distilled checkpoint, and the selected optional runtime planner.
+**Context and scope:** Assemble product design two from the same structured-belief core, the offline rollout policy improver, and the distilled policy.
 
 **Definition of done:**
 
-- Manifest states whether live search is enabled and pins its triggers, budgets, population model, and distilled checkpoint.
+- Manifest states whether live search is enabled as an optional hybrid and pins its triggers, budgets, population model, and distilled checkpoint.
 - Passes complete legality, observation-correctness, tactical, calibration, cross-play, stranger-partner, browser, and artifact gates against `AGENT-001`.
-- If live search adds insufficient incremental value, the release is the distilled policy and search remains an offline teacher.
+- If optional live hybrid search adds insufficient incremental value or fails profiling, the release is the distilled policy and search remains an offline teacher.
 
 **Testing plan:** Policy-only fallback; deterministic fixed-budget replay; full action surface; selected-search trace audit; browser conformance; incompatible artifact rejection; reproducible promotion report.
 
