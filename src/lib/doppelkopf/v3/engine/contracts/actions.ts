@@ -43,4 +43,4 @@ export interface LegalActionV3 {
   action: GameActionV3;
 }
 
-export type actionEquivalenceKey = string; // PROVISIONAL - subject to change until V3.0a
+export type ActionEquivalenceKey = string; // PROVISIONAL - subject to change until V3.0a
