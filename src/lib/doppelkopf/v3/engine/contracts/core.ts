@@ -30,3 +30,6 @@ export type IllegalActionReason =
   | "unknown_action"
   | "malformed_action"
   | "rule_violation";
+
+export type HandContextV3 = unknown; // PROVISIONAL - subject to change until V3.0a
+export type PrngDescriptor = unknown; // PROVISIONAL - subject to change until V3.0a

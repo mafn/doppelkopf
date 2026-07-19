@@ -27,26 +27,31 @@ export interface BaseGameStateV3 {
   tricks: readonly TrickState[];
 }
 
+// PROVISIONAL - subject to change until V3.0a
 export interface ReservationPhaseState extends BaseGameStateV3 {
   phase: "reservations";
   activeSeat: Seat;
 }
 
+// PROVISIONAL - subject to change until V3.0a
 export interface PovertyAcceptancePhaseState extends BaseGameStateV3 {
   phase: "poverty_acceptance";
   activeSeat: Seat;
 }
 
+// PROVISIONAL - subject to change until V3.0a
 export interface PovertyExchangePhaseState extends BaseGameStateV3 {
   phase: "poverty_exchange";
   activeSeat: Seat;
 }
 
+// PROVISIONAL - subject to change until V3.0a
 export interface PlayPhaseState extends BaseGameStateV3 {
   phase: "play";
   activeSeat: Seat;
 }
 
+// PROVISIONAL - subject to change until V3.0a
 export interface CompletedPhaseState extends BaseGameStateV3 {
   phase: "completed";
   activeSeat: null;

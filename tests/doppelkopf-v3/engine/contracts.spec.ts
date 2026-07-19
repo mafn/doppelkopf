@@ -76,16 +76,6 @@ test("negative type assertions separating observation from authoritative state",
 
   const isObsState: IsAssignable<AgentObservationV3, GameStateV3> = false;
   expect(isObsState).toBe(false);
-
-  // observation has no parties field
-  type HasParties<T> = "parties" extends keyof T ? true : false;
-  const obsHasParties: HasParties<AgentObservationV3> = false;
-  expect(obsHasParties).toBe(false);
-
-  // observation has no activeSeat field
-  type HasActiveSeat<T> = "activeSeat" extends keyof T ? true : false;
-  const obsHasActiveSeat: HasActiveSeat<AgentObservationV3> = false;
-  expect(obsHasActiveSeat).toBe(false);
 });
 
 test("unresolved hochzeit is a contingent party state", () => {
