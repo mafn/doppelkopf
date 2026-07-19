@@ -1,6 +1,6 @@
 ## Workstream A: Greenfield Engine
 
-The V3 engine lives under `src/lib/doppelkopf/v3/`. Existing files under `src/lib/doppelkopf/` are legacy evidence only and do not constrain V3 types, state, actions, or behavior. Unit and conformance tests live under `tests/doppelkopf-v3/` and use the existing Playwright test runner for direct TypeScript imports.
+The V3 engine lives under `src/lib/doppelkopf/v3/`. Existing files under `src/lib/doppelkopf/` are legacy evidence only and do not constrain V3 types, state, actions, or behavior. Unit and conformance tests live under `tests/doppelkopf-v3/`. Mandate a fast Node runner for mechanics, settlements, and generated hands. Relegate Playwright _only_ to browser parity, Web Worker tests, and ONNX integration.
 
 All tasks use these references:
 
@@ -26,9 +26,17 @@ ENG3-006 -> ENG3-009 Trick play and Hochzeit
 ENG3-006 -> ENG3-010 Announcements and promotions
 ENG3-001,004,005 -> ENG3-011 Settlement
 ENG3-007..011 -> ENG3-012 Integrated hand engine
-ENG3-004,012 -> ENG3-013 Rule packs and sessions
-ENG3-002,012,013 -> ENG3-014 Observation, replay, and certification
-ENG3-003,012..014 -> ENG3-015 Deterministic simulation and parity
+ENG3-004,012 -> ENG3-013A Primary pack (V3.0a)
+ENG3-002,012,013A -> ENG3-014A Primary observation, replay, certification (V3.0a)
+ENG3-003,012..014A -> ENG3-015A Primary deterministic simulation (V3.0a)
+
+ENG3-013A -> ENG3-013B Extended packs (V3.0b)
+ENG3-013B,014A -> ENG3-014B Extended observation, replay, certification (V3.0b)
+ENG3-014B,015A -> ENG3-015B Extended deterministic simulation (V3.0b)
+
+ENG3-013B..015B -> ENG3-013C Session engine (V3.0b)
+ENG3-013C,014B -> ENG3-014C Session observation, replay, certification (V3.0b)
+ENG3-014C,015B -> ENG3-015C Session deterministic simulation (V3.0b)
 ```
 
 After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After `ENG3-006`, tasks `007` through `011` can proceed concurrently because each owns a separate module. `ENG3-012` is the deliberate integration point.
@@ -37,9 +45,9 @@ After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After 
 
 **Dependencies:** `V3-INT-001`.
 
-**Context and scope:** Establish append-only public types so later work can proceed without repeatedly editing shared files. `V3-INT-001` owns repository layout, empty module barrels, and root scripts; this task owns all files under `src/lib/doppelkopf/v3/engine/contracts/` and the engine's public exports. Define cards, rules, actions, state, events, settlement, observation, replay, branded schema IDs, `Seat`, canonical card IDs, immutable `GameDefinition`, phase-specific state variants, complete actions, legal actions, public/private events, `TransitionResult`, illegal-action reasons, and per-seat utility. Unresolved Hochzeit must be a contingent party state, not a future partner stored as present truth.
+**Context and scope:** Establish append-only public types so later work can proceed without repeatedly editing shared files. `V3-INT-001` owns repository layout, empty module barrels, and root scripts; this task owns all files under `src/lib/doppelkopf/v3/engine/contracts/` and the engine's public exports. We only freeze the core envelope early (seats, schema identifiers, events, etc.). Treat phase-specific contracts as provisional until the primary pack passes certification (V3.0a). Define cards, rules, actions, state, events, settlement, observation, replay, branded schema IDs, `Seat`, canonical card IDs, immutable `GameDefinition`, `HandContextV3`, `PrngDescriptor`, `actionEquivalenceKey`, `ReplayStepV3`, phase-specific state variants, complete actions, legal actions, public/private events, `TransitionResult`, illegal-action reasons, and per-seat utility. Unresolved Hochzeit must be a contingent party state, not a future partner stored as present truth. Duplicate physical copies are preserved internally for determinism/replays, but the agent boundary receives canonical card types to avoid action duplication. Action collapsing must respect provenance/settlement. The agent optimizes hand-local utility in a pure single-hand game.
 
-**Definition of done:** Every phase and action named in the V3 design is represented; exhaustive switches compile; rules are bound through `GameDefinition`; UI text and legacy engine types do not cross the boundary; internal storage optimizations are not frozen into the public contract.
+**Definition of done:** Every phase and action named in the V3 design is represented; exhaustive switches compile; rules are bound through `GameDefinition` and `HandContextV3`; UI text and legacy engine types do not cross the boundary; internal storage optimizations are not frozen into the public contract.
 
 **Testing plan:** Add compile-time exhaustive fixtures for every union, negative type assertions separating observation from authoritative state, and run `npm run check` plus the focused contract tests.
 
@@ -47,7 +55,7 @@ After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After 
 
 **Dependencies:** `ENG3-001`.
 
-**Context and scope:** Add `v3/codec/` with canonical encoding and hashing for rules, definitions, states, actions, decisions, and replays. Specify ordering for keys, cards, actions, and set-like collections. Reject functions, cycles, `undefined`, non-finite numbers, and unknown schemas. Use identical UTF-8 bytes and a supported hash implementation in Node and browsers.
+**Context and scope:** Add `v3/codec/` with canonical encoding and hashing for rules, definitions, states, actions, decisions, and replays. Specify ordering for keys, cards, actions, and set-like collections. Move from a single final hash to a cryptographic hash chain: `stepHash = H(previousStepHash || canonical(action) || canonical(publicEvents) || saltedPrivateCommitments || resultingStateHash)`. Reject functions, cycles, `undefined`, non-finite numbers, and unknown schemas. Use identical UTF-8 bytes and a supported hash implementation in Node and browsers.
 
 **Definition of done:** Semantically identical values produce identical bytes and hashes regardless of insertion order; every decision-relevant mutation changes the hash; encoding is locale-independent; schema mismatches fail closed.
 
@@ -57,7 +65,7 @@ After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After 
 
 **Dependencies:** `ENG3-001`.
 
-**Context and scope:** Add an explicit serializable PRNG, unbiased bounded sampling, deterministic shuffle, canonical duplicate-card IDs, 48-card and no-nines 40-card decks, dealing, and dealer/opening-seat helpers. Add validated test-only construction from explicit hands. Engine code must not call `Math.random`.
+**Context and scope:** Add an explicit serializable PRNG. Require distinct PRNG streams for Deal, Policy, World Sampling, and Rollouts. Add unbiased bounded sampling, deterministic shuffle, canonical duplicate-card IDs, 48-card and no-nines 40-card decks, dealing, and dealer/opening-seat helpers. Add validated test-only construction from explicit hands. Engine code must not call `Math.random`.
 
 **Definition of done:** Definition plus seed reproduces byte-identical hands and final PRNG state in supported runtimes; every card occurs exactly once; 48-card hands contain 12 cards and 40-card hands contain 10; malformed fixture deals are rejected.
 
@@ -127,7 +135,7 @@ After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After 
 
 **Dependencies:** `ENG3-006`.
 
-**Context and scope:** Implement `v3/phases/meta-actions.ts`. Cover Re/Kontra and No90/60/30/Schwarz chains, explicit pass whenever a meta decision is offered, compiled timing windows, team eligibility, Hochzeit timing effects, Pflichtansage where supported, and Schweine/Superschweine declaration and activation. Define deterministic interleaving with card play.
+**Context and scope:** Implement `v3/phases/meta-actions.ts`. Cover Re/Kontra and No90/60/30/Schwarz chains, explicit pass whenever a meta decision is offered, compiled timing windows, team eligibility, Hochzeit timing effects, Pflichtansage where supported, and Schweine/Superschweine declaration and activation. Define deterministic interleaving with card play. The engine must not spam `Pass`. It only offers decisions when actions lead to genuinely different future rights/information.
 
 **Definition of done:** Timing derives from compiled rules and remaining cards, not UI clocks; every optional decision includes pass; duplicate/late/wrong-team actions are rejected atomically; promotions affect subsequent comparisons but never completed tricks.
 
@@ -153,32 +161,92 @@ After `ENG3-001`, tasks `002`, `003`, and `004` can proceed concurrently. After 
 
 **Testing plan:** End-to-end seeded hands for every contract, traversal from every phase fixture, action-ID stability, wrong ID/seat/phase atomicity, event ordering, and terminal/redeal behavior.
 
-### ENG3-013: Curated Rule Packs and Cross-Hand Session
+### ENG3-013A: Primary Rule Pack (V3.0a)
 
 **Dependencies:** `ENG3-004`, `ENG3-012`.
 
-**Context and scope:** Add pinned declarative packs `ddv-48-v1`, `private-48-armut-v1`, and `private-40-v1`, plus a capability matrix and reviewed deviations from DDV and legacy `standard`. Add a separate deterministic session layer for dealer/opening-seat rotation, redeals, and configured Bock trigger/multiplier queues. A redeal must not count as a zero-value completed hand.
+**Context and scope:** Add pinned declarative pack `website-48-single-hand-v1`. Compatibility is empirical, not categorical. Rule conditioning must expose derived mechanics, not just flags.
 
-**Definition of done:** Every public pack compiles to a pinned hash and explicitly sets all strategic axes; packs differ only on documented axes; session state is canonically serializable; dealer and Bock progression are deterministic; a Bock multiplier is applied exactly once.
+**Definition of done:** The public pack compiles to a pinned hash and explicitly sets all strategic axes.
 
-**Testing plan:** Pack hash snapshots, pairwise axis comparisons, executable conformance fixtures for all catalog features, multi-hand golden sessions, repeated redeals, overlapping Bock triggers, queue exhaustion, dealer rotation, and serialized resume.
+**Testing plan:** Pack hash snapshots, pairwise axis comparisons, executable conformance fixtures for all catalog features.
 
-### ENG3-014: Observation, Replay, and Engine Certification
+### ENG3-014A: Primary Observation, Replay, and Certification (V3.0a)
 
-**Dependencies:** `ENG3-002`, `ENG3-012`, `ENG3-013`.
+**Dependencies:** `ENG3-002`, `ENG3-012`, `ENG3-013A`.
 
-**Context and scope:** Implement detached actor-relative observations, canonical replay recording/execution, and the certification suite. Observations include public ordered history plus only the acting seat's hand and legal private exchange memory. Replays bind schema, engine version, complete definition, actions, and final hash. Certification covers invariants, atomicity, information sets, rules, scoring, and known legacy defects.
+**Context and scope:** Implement detached actor-relative observations, canonical replay recording/execution using a hash chain (`ReplayStepV3`), and the certification suite for the primary pack. Observations include public ordered history plus only the acting seat's hand and legal private exchange memory. Replays bind schema, engine version, complete definition, session context, algorithms, actions, and hash chains. Certification covers invariants, atomicity, information sets, rules, scoring, and known legacy defects for `website-48-single-hand-v1`.
 
 **Definition of done:** Hidden opponent cards, unresolved true teams, future Hochzeit partner, original ownership, and other seats' private events are unreachable from observations; mutation of an observation cannot affect state; replay alone reproduces events, settlement, and final hash; incompatible/corrupt replays fail closed; the certification command reports seeds and action traces on failure.
 
-**Testing plan:** Same-information-set hidden-card swaps must preserve observation and legal-action hashes; relative-seat rotations; Armut privacy; unresolved-Hochzeit leakage; mutation isolation; golden replays for all phase families; corruption/reordering tests; thousands of generated hands per pack; permanent regressions for rejected Schweine, poverty mutation/order, rules rebinding, and lossy `Set` serialization.
+**Testing plan:** Same-information-set hidden-card swaps must preserve observation and legal-action hashes; relative-seat rotations; unresolved-Hochzeit leakage; mutation isolation; golden replays for all phase families; corruption/reordering tests; thousands of generated hands for the primary pack; permanent regressions.
 
-### ENG3-015: Deterministic Simulation, Runtime Parity, and Baseline Throughput
+### ENG3-015A: Primary Deterministic Simulation and Runtime Parity (V3.0a)
 
-**Dependencies:** `ENG3-003`, `ENG3-012`, `ENG3-013`, `ENG3-014`.
+**Dependencies:** `ENG3-003`, `ENG3-012..014A`.
 
-**Context and scope:** Add a synchronous legal-random agent, complete headless decision loop, explicit redeal/session handling, trajectory capture, deterministic worker partitioning, and reproducible Node/browser benchmarks. Measure hands/s and decisions/s by worker count, transition latency, allocation/memory, and representative pack/phase mix. Do not extrapolate training duration.
+**Context and scope:** Add a synchronous legal-random agent, complete headless decision loop, trajectory capture, deterministic worker partitioning, and reproducible Node/browser benchmarks for the primary pack. Measure hands/s and decisions/s by worker count, transition latency, allocation/memory, and representative phase mix. Do not extrapolate training duration.
 
-**Definition of done:** A manifest of seeds yields identical replay hashes and utilities at 1, 8, and 32 workers; empty legal sets and invalid actions are hard failures; canonical replay subsets match in Node, Chromium, Firefox, and WebKit; benchmark reports include raw data, warm-up, runtime, and hardware metadata. Rust/WASM is recommended only if a declared target is missed and profiling identifies the engine as the bottleneck.
+**Definition of done:** A manifest of seeds yields identical replay hashes and utilities at 1, 8, and 32 workers; empty legal sets and invalid actions are hard failures; canonical replay subsets match in Node, Chromium, Firefox, and WebKit; benchmark reports include raw data, warm-up, runtime, and hardware metadata.
 
-**Testing plan:** Fixed-seed batch goldens, worker-count equivalence, all packs, forced rare phases, crash propagation, utility conservation over large runs, cross-browser replay parity, repeated-run variance checks, and a CI-sized benchmark smoke test.
+**Testing plan:** Fixed-seed batch goldens, worker-count equivalence, forced rare phases, crash propagation, utility conservation over large runs, cross-browser replay parity, repeated-run variance checks, and a CI-sized benchmark smoke test for the primary pack.
+
+### ENG3-013B: Extended Packs (V3.0b)
+
+**Dependencies:** `ENG3-013A`.
+
+**Context and scope:** Add pinned declarative packs `private-48-armut-v1`, and `private-40-v1`, plus a capability matrix and reviewed deviations from DDV and legacy `standard`. The V3.0 engine must preserve ALL V1/V2 mechanics (Armut, 40-card play, existing solos, Schweine, etc.). Create a legacy migration matrix mapping every V1/V2 preset (e.g., standard, oblivious, tournament) to a V3 ruleset ID, ensuring parity-tested mechanical support in V3.0.
+
+**Definition of done:** Every public pack compiles to a pinned hash and explicitly sets all strategic axes; packs differ only on documented axes; legacy presets are parity-tested against V3 mappings.
+
+**Testing plan:** Pack hash snapshots, pairwise axis comparisons, executable conformance fixtures for all catalog features.
+
+### ENG3-014B: Extended Observation, Replay, and Certification (V3.0b)
+
+**Dependencies:** `ENG3-013B`, `ENG3-014A`.
+
+**Context and scope:** Extend observation, replay, and certification for extended packs.
+
+**Definition of done:** Same as 014A, but for extended packs.
+
+**Testing plan:** Armut privacy; poverty mutation/order, lossy `Set` serialization, and thousands of generated hands per extended pack.
+
+### ENG3-015B: Extended Deterministic Simulation and Runtime Parity (V3.0b)
+
+**Dependencies:** `ENG3-014B`, `ENG3-015A`.
+
+**Context and scope:** Extend simulation and runtime parity for extended packs.
+
+**Definition of done:** Same as 015A, but for extended packs.
+
+**Testing plan:** Fixed-seed batch goldens, worker-count equivalence, all extended packs.
+
+### ENG3-013C: Session Engine (V3.0b)
+
+**Dependencies:** `ENG3-013B..015B`.
+
+**Context and scope:** Add a separate deterministic session layer for dealer/opening-seat rotation, redeals, Bock, and Pflichtsolo. A redeal must not count as a zero-value completed hand.
+
+**Definition of done:** Session state is canonically serializable (including `SessionDefinitionV3`, `SessionStateV3`, and `SessionEngineV3` with cumulative scoring, pflichtsolo, and bock queues); dealer progression is deterministic.
+
+**Testing plan:** Multi-hand golden sessions, repeated redeals, dealer rotation, and serialized resume.
+
+### ENG3-014C: Session Observation, Replay, and Certification (V3.0b)
+
+**Dependencies:** `ENG3-013C`, `ENG3-014B`.
+
+**Context and scope:** Extend observation, replay, and certification for multi-hand sessions.
+
+**Definition of done:** Session replays reproduce full session events, settlement, and final hash.
+
+**Testing plan:** Session replay and certification tests.
+
+### ENG3-015C: Session Deterministic Simulation and Parity (V3.0b)
+
+**Dependencies:** `ENG3-014C`, `ENG3-015B`.
+
+**Context and scope:** Extend simulation and runtime parity for multi-hand sessions.
+
+**Definition of done:** Simulation works across multi-hand sessions.
+
+**Testing plan:** Multi-hand session simulation tests.
