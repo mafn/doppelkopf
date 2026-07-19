@@ -34,12 +34,12 @@ Keep the browser repository as one npm package. Establish browser-safe modules u
 - `src/lib/doppelkopf/v3/agents`
 - `src/lib/doppelkopf/v3/testkit`
 
-Keep data generation, learners, large evaluation jobs, and Python code in `doppelkopf-training`. Consume the browser repository as a read-only Git submodule at `vendor/doppelkopf`, pinned to an exact commit; require `engine.lock.json` to match that gitlink, schema IDs, and rule hashes. Define concise ownership READMEs and root scripts for V3 type checking, unit tests, complete tests, and benchmarks. Keep generated reports, models, trajectories, and local benchmark results out of Git while retaining schemas, small fixtures, configurations, and selected golden reports.
+Keep data generation, learners, large evaluation jobs, and Python code in `doppelkopf-training`. Consume the browser repository as a read-only Git submodule at `vendor/doppelkopf`, pinned to an exact commit. This task establishes an explicit `bootstrap` `engine.lock.json` that must match that gitlink and blocks V3 generation/evaluation; it reserves the engine, observation, action, replay, and ruleset-hash fields without inventing their authoritative values. `ENG3-001` publishes the engine-owned schema manifest and `ENG3-013` publishes compiled ruleset hashes; after both are available, consumers must activate exact manifest-to-lock comparison before V3 generation or evaluation. Define concise ownership READMEs and root scripts for V3 type checking, unit tests, complete tests, and benchmarks. Keep generated reports, models, trajectories, and local benchmark results out of Git while retaining schemas, small fixtures, configurations, and selected golden reports.
 
 **Definition of done**
 
 - Every browser module resolves from Node and the Astro application without a workspace layer.
-- Training consumes the pinned submodule revision and rejects an engine-lock mismatch.
+- Training consumes the pinned submodule revision and rejects a bootstrap gitlink/checkout mismatch. Exact schema/ruleset-hash mismatch rejection activates only after `ENG3-001` and `ENG3-013` publish the authoritative metadata.
 - Browser-facing imports cannot transitively load Node-only modules.
 - A clean `npm ci` can execute all newly declared root scripts.
 - No V1 source is moved, deleted, or made a dependency of a V3 public contract.

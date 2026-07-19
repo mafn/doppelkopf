@@ -18,6 +18,11 @@
     "test": "playwright test",
     "test:engine": "playwright test --config=playwright.unit.config.ts",
     "test:browser": "playwright test tests/doppelkopf-pages.spec.ts tests/onnxruntime-assets.spec.ts",
+    "v3:check": "astro check",
+    "v3:test": "playwright test --config=playwright.unit.config.ts tests/doppelkopf-v3-boundaries.spec.ts",
+    "v3:astro:smoke": "astro --root tests/fixtures/astro-v3 --config astro.config.mjs build",
+    "v3:test:complete": "npm run v3:test && npm run v3:astro:smoke",
+    "v3:bench": "tsx .scripts/bench-v3.ts",
     "verify": "npm run format:check && npm run check && npm run build && npm run test:engine && npm run test:browser",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -41,7 +46,8 @@
     "prettier": "3.8.1",
     "prettier-plugin-astro": "0.14.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "vite": "^8.1.4"
   },
   "overrides": {
     "lodash": "^4.17.23"
